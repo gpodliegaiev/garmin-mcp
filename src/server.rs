@@ -32,7 +32,7 @@ use chrono::{Local, NaiveDate};
 // `Deserialize` lets serde build a Rust struct from JSON.
 use serde::Deserialize;
 
-use crate::garmin::GarminClient;
+use crate::garmin::{GarminClient, types::ActivityTypeFilter};
 
 /// Largest `limit` accepted by `list_activities`, so one call cannot pull a
 /// huge amount of data into the AI's context.
@@ -61,6 +61,13 @@ pub struct ListActivitiesRequest {
     // when the field is missing.
     #[serde(default = "default_limit")]
     pub limit: u32,
+    /// Only return activities of this sport group. Omit for all activities.
+    /// Groups include their subtypes: `running` includes treadmill runs, and
+    /// strength training is under `fitness_equipment`.
+    // Field name as the client sends it: `activity_type`. Any value not in
+    // the `ActivityTypeFilter` enum makes the call fail with a clear message.
+    #[serde(default)]
+    pub activity_type: Option<ActivityTypeFilter>,
 }
 
 /// Default for `ListActivitiesRequest::limit`.
@@ -140,7 +147,7 @@ impl GarminServer {
     /// result; `Err(message)` is sent as a tool error (`isError: true`), so
     /// the AI sees what went wrong instead of the whole call failing.
     #[tool(
-        description = "List the user's most recent Garmin Connect activities (runs, walks, strength sessions, etc.), newest first. Returns a JSON array with a summary of each activity. Units: distance and elevation in meters, durations in seconds, speed in meters per second, heart rate in bpm, calories in kcal. Fields that don't apply to an activity are omitted."
+        description = "List the user's most recent Garmin Connect activities (runs, walks, strength sessions, etc.), newest first, optionally filtered by sport group (activity_type). Returns a JSON array with a summary of each activity. Units: distance and elevation in meters, durations in seconds, speed in meters per second, heart rate in bpm, calories in kcal. Fields that don't apply to an activity are omitted."
     )]
     async fn list_activities(
         &self,
@@ -155,7 +162,7 @@ impl GarminServer {
         // (e.g. "GET ... failed: HTTP 500: ..."). `?` returns that `Err` early.
         let activities = self
             .garmin
-            .list_activities(req.start, limit)
+            .list_activities(req.start, limit, req.activity_type)
             .await
             .map_err(|e| format!("{e:#}"))?;
 

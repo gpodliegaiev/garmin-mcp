@@ -19,9 +19,23 @@ use serde::de::DeserializeOwned;
 // `crate::garmin::auth::TokenManager`.
 use super::{
     auth::TokenManager,
-    types::{Activity, DailySleep, SleepSummary},
+    types::{Activity, ActivityTypeFilter, DailySleep, SleepSummary},
 };
 use crate::config::Config;
+
+/// Query parameters for the activity search endpoint.
+///
+/// `Serialize` lets reqwest turn it into URL parameters. `camelCase` gives
+/// Garmin's spelling (`activityType`), and a `None` filter is left out of the
+/// URL entirely instead of being sent as an empty value.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivitiesQuery {
+    start: u32,
+    limit: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    activity_type: Option<ActivityTypeFilter>,
+}
 
 /// Give up on a request if Garmin does not answer within this time.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -68,12 +82,24 @@ impl GarminClient {
     ///
     /// - `start`: how many activities to skip (for paging).
     /// - `limit`: how many to return.
-    pub async fn list_activities(&self, start: u32, limit: u32) -> anyhow::Result<Vec<Activity>> {
-        // `&[...]` is a borrowed slice of (name, value) pairs; reqwest turns
-        // them into `?start=0&limit=5`. Garmin returns a JSON array, which
-        // serde turns into a `Vec<Activity>` (a growable list).
-        self.get_json(ACTIVITIES_PATH, &[("start", start), ("limit", limit)])
-            .await
+    /// - `activity_type`: only return this sport group; `None` for all.
+    pub async fn list_activities(
+        &self,
+        start: u32,
+        limit: u32,
+        activity_type: Option<ActivityTypeFilter>,
+    ) -> anyhow::Result<Vec<Activity>> {
+        // The parameters have different types (numbers and an enum), so they
+        // can't share one `[(&str, u32)]` slice. A small struct holds them
+        // instead; reqwest turns it into `?start=0&limit=5&activityType=running`.
+        let query = ActivitiesQuery {
+            start,
+            limit,
+            activity_type,
+        };
+        // Garmin returns a JSON array, which serde turns into a
+        // `Vec<Activity>` (a growable list).
+        self.get_json(ACTIVITIES_PATH, &query).await
     }
 
     /// Gets the sleep summary for one night.
@@ -158,5 +184,46 @@ impl GarminClient {
             // `with_context` takes a closure, so the message is only built
             // if there actually is an error.
             .with_context(|| format!("GET {path} failed (network error)"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Builds (but does not send) a request with `query` and returns its
+    /// query string, so we can check what Garmin would receive.
+    fn query_string(query: &ActivitiesQuery) -> String {
+        let request = reqwest::Client::new()
+            .get("https://example.com/")
+            .query(query)
+            .build()
+            .unwrap();
+        // `.query()` on a URL returns `Option<&str>`; `unwrap_or("")` gives
+        // an empty string if there is none. `.to_string()` makes it owned.
+        request.url().query().unwrap_or("").to_string()
+    }
+
+    #[test]
+    fn activity_type_is_sent_in_garmin_spelling() {
+        let query = ActivitiesQuery {
+            start: 0,
+            limit: 5,
+            activity_type: Some(ActivityTypeFilter::FitnessEquipment),
+        };
+        assert_eq!(
+            query_string(&query),
+            "start=0&limit=5&activityType=fitness_equipment"
+        );
+    }
+
+    #[test]
+    fn missing_activity_type_is_left_out() {
+        let query = ActivitiesQuery {
+            start: 10,
+            limit: 3,
+            activity_type: None,
+        };
+        assert_eq!(query_string(&query), "start=10&limit=3");
     }
 }

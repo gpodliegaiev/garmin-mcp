@@ -5,7 +5,55 @@
 //! assistant, which makes tool results much smaller.
 //! serde ignores any JSON field that has no matching struct field.
 
+use rmcp::schemars::{self, JsonSchema};
 use serde::{Deserialize, Deserializer, Serialize};
+
+/// Sport groups accepted by the activity list's `activityType` filter.
+///
+/// Garmin filters only by *parent* type: `running` also returns treadmill
+/// runs, and strength training is under `fitness_equipment`. Exact subtypes
+/// like `strength_training` are rejected by Garmin, so they aren't listed.
+///
+/// An `enum` is a type whose value is exactly one of a fixed set of
+/// *variants*. Using one here (instead of a free-form `String`) means:
+/// - the AI client sees the allowed values in the tool's JSON schema
+///   (`JsonSchema`), and
+/// - anything else is rejected while reading the tool arguments
+///   (`Deserialize`), before we ever call Garmin.
+///
+/// `rename_all = "snake_case"` maps `FitnessEquipment` <-> `"fitness_equipment"`
+/// both when reading tool input and when writing the URL (`Serialize`).
+/// `Clone, Copy` let the value be duplicated freely; it is tiny.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivityTypeFilter {
+    /// Running, including treadmill, trail and track running.
+    Running,
+    /// Cycling, including indoor cycling.
+    Cycling,
+    /// Walking.
+    Walking,
+    /// Hiking.
+    Hiking,
+    /// Swimming (pool and open water).
+    Swimming,
+    /// Gym activities: strength training, stair climbing, elliptical, etc.
+    FitnessEquipment,
+    /// Activities that fit no other group.
+    Other,
+    /// Multisport, e.g. triathlon.
+    MultiSport,
+    /// Skiing, snowboarding and other winter sports.
+    WinterSports,
+    /// Rowing, paddling, surfing and other water sports.
+    WaterSports,
+    /// Diving.
+    Diving,
+    /// Team sports, e.g. football, basketball.
+    TeamSports,
+    /// Racket sports, e.g. tennis, padel.
+    RacketSports,
+}
 
 /// One activity (run, walk, strength session, ...) from the activity list.
 ///
