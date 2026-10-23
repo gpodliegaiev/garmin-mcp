@@ -26,6 +26,9 @@ use rmcp::{
     tool_handler,
     tool_router,
 };
+// `NaiveDate` is a calendar date without a time zone; `Local` reads this
+// computer's clock and time zone (used for "today").
+use chrono::{Local, NaiveDate};
 // `Deserialize` lets serde build a Rust struct from JSON.
 use serde::Deserialize;
 
@@ -63,6 +66,18 @@ pub struct ListActivitiesRequest {
 /// Default for `ListActivitiesRequest::limit`.
 fn default_limit() -> u32 {
     5
+}
+
+/// Input arguments for the `get_sleep` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetSleepRequest {
+    /// Day to get sleep for, as YYYY-MM-DD. Garmin files a night under the
+    /// day you woke up, so last night's sleep is today's date. Defaults to
+    /// today.
+    // `Option<String>` makes the argument optional: missing or `null` in the
+    // JSON becomes `None`. (`#[serde(default)]` lets it be left out entirely.)
+    #[serde(default)]
+    pub date: Option<String>,
 }
 
 /// Our MCP server. Holds everything it needs to answer requests.
@@ -147,6 +162,41 @@ impl GarminServer {
         // Turn the list of `Activity` structs into JSON text for the client.
         // Compact (no indentation) to keep the result small for the AI.
         serde_json::to_string(&activities).map_err(|e| e.to_string())
+    }
+
+    /// Returns one night's sleep summary as compact JSON, or a short message
+    /// if Garmin has no sleep recorded for that day.
+    #[tool(
+        description = "Get the user's sleep for one night from Garmin Connect: bed and wake times (local), total and per-stage sleep (deep, light, REM, awake), sleep score and rating, stage percentages, average heart rate, respiration and stress during sleep, and recommended sleep. Garmin files a night under the day the user woke up, so last night's sleep is today's date. Durations in seconds unless the field name says minutes."
+    )]
+    async fn get_sleep(
+        &self,
+        Parameters(req): Parameters<GetSleepRequest>,
+    ) -> Result<String, String> {
+        // Work out which day to ask for.
+        // `match` compares a value against patterns and runs the first arm
+        // that fits. `Some(text)` binds the string inside to `text`.
+        let date = match req.date {
+            // Parse the text as a date. `parse_from_str` returns a `Result`;
+            // `map_err` replaces its error with a message the AI can act on.
+            Some(text) => NaiveDate::parse_from_str(text.trim(), "%Y-%m-%d")
+                .map_err(|_| format!("invalid date {text:?}: expected YYYY-MM-DD"))?,
+            // No date given: use today in this computer's time zone.
+            None => Local::now().date_naive(),
+        };
+
+        let sleep = self
+            .garmin
+            .daily_sleep(date)
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+
+        // `Some(summary)`: send it as JSON. `None`: say there is no data. This
+        // is a normal answer, not an error, so it is returned as `Ok`.
+        match sleep {
+            Some(summary) => serde_json::to_string(&summary).map_err(|e| e.to_string()),
+            None => Ok(format!("No sleep data recorded for {date}.")),
+        }
     }
 }
 

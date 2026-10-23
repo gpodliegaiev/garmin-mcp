@@ -350,6 +350,7 @@ name = "garmin-mcp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "dotenvy",
  "reqwest",
  "rmcp",

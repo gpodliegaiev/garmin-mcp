@@ -8,13 +8,19 @@ use std::time::Duration;
 
 use anyhow::Context;
 use reqwest::StatusCode;
+// `NaiveDate` is a calendar date with no time zone, e.g. 2026-10-23.
+use chrono::NaiveDate;
+use serde::Serialize;
 // `DeserializeOwned` is the trait for "a type serde can build from JSON
 // without borrowing from the input text". Used as a bound on `get_json`.
 use serde::de::DeserializeOwned;
 
 // `super::` means "the parent module" (`garmin`), so this is
 // `crate::garmin::auth::TokenManager`.
-use super::{auth::TokenManager, types::Activity};
+use super::{
+    auth::TokenManager,
+    types::{Activity, DailySleep, SleepSummary},
+};
 use crate::config::Config;
 
 /// Give up on a request if Garmin does not answer within this time.
@@ -22,6 +28,9 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Path of the activity search endpoint.
 const ACTIVITIES_PATH: &str = "/activitylist-service/activities/search/activities";
+
+/// Path of the daily sleep endpoint. Requires a `date=YYYY-MM-DD` parameter.
+const DAILY_SLEEP_PATH: &str = "/sleep-service/sleep/dailySleep";
 
 /// Authenticated access to the Garmin API.
 pub struct GarminClient {
@@ -67,6 +76,22 @@ impl GarminClient {
             .await
     }
 
+    /// Gets the sleep summary for one night.
+    ///
+    /// `date` is the calendar day Garmin files the sleep under (the day you
+    /// woke up). Returns `Ok(None)` when nothing was recorded for that day.
+    pub async fn daily_sleep(&self, date: NaiveDate) -> anyhow::Result<Option<SleepSummary>> {
+        // `NaiveDate`'s `Display` format is `YYYY-MM-DD`, exactly what Garmin
+        // expects, so `.to_string()` gives the query value.
+        let date = date.to_string();
+        // `date.as_str()` borrows the `String` as a `&str` for the query.
+        let raw: DailySleep = self
+            .get_json(DAILY_SLEEP_PATH, &[("date", date.as_str())])
+            .await?;
+        // Convert Garmin's nested format into our flat summary (or `None`).
+        Ok(raw.into_summary())
+    }
+
     /// Sends an authenticated `GET` request and parses the JSON response
     /// into `T`.
     ///
@@ -74,12 +99,15 @@ impl GarminClient {
     /// the result type (e.g. `Vec<Activity>`), and the compiler checks that
     /// serde knows how to build it from JSON.
     ///
-    /// `query: &[(&str, u32)]` is a slice of query parameters. If we later
-    /// need text parameters, this can be made generic too.
-    async fn get_json<T: DeserializeOwned>(
+    /// `query` can be anything serde can turn into URL parameters, such as
+    /// `&[("start", 0), ("limit", 5)]` or `&[("date", "2026-10-23")]`. That is
+    /// what the second generic parameter `Q: Serialize` expresses. `?Sized`
+    /// relaxes a default rule so `Q` may be a slice like `[(&str, u32)]`,
+    /// whose size isn't known at compile time (we only use it via `&Q`).
+    async fn get_json<T: DeserializeOwned, Q: Serialize + ?Sized>(
         &self,
         path: &str,
-        query: &[(&str, u32)],
+        query: &Q,
     ) -> anyhow::Result<T> {
         let token = self.tokens.get_token().await?;
         let mut response = self.send_get(path, query, &token).await?;
@@ -114,10 +142,10 @@ impl GarminClient {
     }
 
     /// Sends one `GET` request with the given bearer token.
-    async fn send_get(
+    async fn send_get<Q: Serialize + ?Sized>(
         &self,
         path: &str,
-        query: &[(&str, u32)],
+        query: &Q,
         token: &str,
     ) -> anyhow::Result<reqwest::Response> {
         self.http
