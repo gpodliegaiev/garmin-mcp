@@ -32,7 +32,7 @@ use chrono::{Local, NaiveDate};
 // `Deserialize` lets serde build a Rust struct from JSON.
 use serde::Deserialize;
 
-use crate::garmin::{GarminClient, types::ActivityTypeFilter};
+use crate::garmin::{GarminClient, client::ActivitiesQuery, types::ActivityTypeFilter};
 
 /// Largest `limit` accepted by `list_activities`, so one call cannot pull a
 /// huge amount of data into the AI's context.
@@ -68,11 +68,139 @@ pub struct ListActivitiesRequest {
     // the `ActivityTypeFilter` enum makes the call fail with a clear message.
     #[serde(default)]
     pub activity_type: Option<ActivityTypeFilter>,
+    /// Only activities that started on or after this local date, as
+    /// YYYY-MM-DD. Raise `limit` to get every activity in a date range.
+    #[serde(default)]
+    pub start_date: Option<String>,
+    /// Only activities that started on or before this local date, as
+    /// YYYY-MM-DD (inclusive).
+    #[serde(default)]
+    pub end_date: Option<String>,
+    /// Minimum distance in km (inclusive), e.g. 10 for runs of 10 km or
+    /// more. Also in km for swimming: 1.5 means 1500 m.
+    // `f64` is a 64-bit decimal number, so values like 5.5 are accepted.
+    #[serde(default)]
+    pub min_distance_km: Option<f64>,
+    /// Maximum distance in km (inclusive).
+    #[serde(default)]
+    pub max_distance_km: Option<f64>,
+    /// Minimum duration in minutes (inclusive), not counting pauses. This is
+    /// the `duration_min` field of the result.
+    #[serde(default)]
+    pub min_duration_min: Option<f64>,
+    /// Maximum duration in minutes (inclusive), not counting pauses.
+    #[serde(default)]
+    pub max_duration_min: Option<f64>,
+    /// Minimum total elevation gain in meters (inclusive).
+    // `u32` cannot be negative, so serde already rejects e.g. -5.
+    #[serde(default)]
+    pub min_elevation_gain_m: Option<u32>,
+    /// Maximum total elevation gain in meters (inclusive).
+    #[serde(default)]
+    pub max_elevation_gain_m: Option<u32>,
 }
 
 /// Default for `ListActivitiesRequest::limit`.
 fn default_limit() -> u32 {
     5
+}
+
+impl ListActivitiesRequest {
+    /// Checks the tool arguments and converts them into Garmin's query
+    /// parameters: dates parsed, km → meters, minutes → seconds.
+    ///
+    /// Takes `self` by value (no `&`): the request is used up, since it's
+    /// not needed once converted. Returns `Err(message)` for input the AI
+    /// should fix, e.g. a bad date or a minimum above the maximum.
+    fn into_query(self) -> Result<ActivitiesQuery, String> {
+        // `Option::map` runs the closure only when there is a value:
+        // `Some(text)` becomes `Some(parse_date(text))`, `None` stays `None`.
+        // `transpose` turns that `Option<Result<..>>` into
+        // `Result<Option<..>>`, so `?` can return a parse error early.
+        let start_date = self.start_date.as_deref().map(parse_date).transpose()?;
+        let end_date = self.end_date.as_deref().map(parse_date).transpose()?;
+
+        // Garmin answers a reversed range with an empty list, which would look
+        // like "no activities". Reject it so the AI can correct the call.
+        // Checked on the tool's own values, so the message shows the units
+        // the AI used (km, minutes), not Garmin's.
+        check_range("start_date", start_date, "end_date", end_date)?;
+        check_range(
+            "min_distance_km",
+            self.min_distance_km,
+            "max_distance_km",
+            self.max_distance_km,
+        )?;
+        check_range(
+            "min_duration_min",
+            self.min_duration_min,
+            "max_duration_min",
+            self.max_duration_min,
+        )?;
+        check_range(
+            "min_elevation_gain_m",
+            self.min_elevation_gain_m,
+            "max_elevation_gain_m",
+            self.max_elevation_gain_m,
+        )?;
+
+        Ok(ActivitiesQuery {
+            start: self.start,
+            limit: self.limit.clamp(1, MAX_ACTIVITIES),
+            activity_type: self.activity_type,
+            start_date,
+            end_date,
+            min_distance: scaled("min_distance_km", self.min_distance_km, 1000.0)?,
+            max_distance: scaled("max_distance_km", self.max_distance_km, 1000.0)?,
+            min_duration: scaled("min_duration_min", self.min_duration_min, 60.0)?,
+            max_duration: scaled("max_duration_min", self.max_duration_min, 60.0)?,
+            // `u64::from` widens the `u32` losslessly to the query's type.
+            min_elevation: self.min_elevation_gain_m.map(u64::from),
+            max_elevation: self.max_elevation_gain_m.map(u64::from),
+        })
+    }
+}
+
+/// Parses a `YYYY-MM-DD` tool argument (surrounding spaces allowed).
+fn parse_date(text: &str) -> Result<NaiveDate, String> {
+    NaiveDate::parse_from_str(text.trim(), "%Y-%m-%d")
+        .map_err(|_| format!("invalid date {text:?}: expected YYYY-MM-DD"))
+}
+
+/// Converts an optional tool value to Garmin's whole units, e.g. km → m
+/// with `factor` 1000. Garmin rejects decimals, so the result is rounded.
+/// `name` is the argument name, used in the error message.
+fn scaled(name: &str, value: Option<f64>, factor: f64) -> Result<Option<u64>, String> {
+    match value {
+        None => Ok(None),
+        // A `match` arm can have a guard (`if ...`): this arm is taken only
+        // for negative values.
+        Some(v) if v < 0.0 => Err(format!("{name} must not be negative, got {v}")),
+        // `as u64` converts the rounded decimal to a whole number.
+        Some(v) => Ok(Some((v * factor).round() as u64)),
+    }
+}
+
+/// Fails if both bounds are given and `min` is greater than `max`.
+///
+/// `<T: PartialOrd + Debug>` makes this work for any type that can be
+/// compared with `>` and printed with `{:?}`: dates and numbers here.
+fn check_range<T: PartialOrd + std::fmt::Debug>(
+    min_name: &str,
+    min: Option<T>,
+    max_name: &str,
+    max: Option<T>,
+) -> Result<(), String> {
+    // `if let` matches a single pattern: here, only when both are `Some`.
+    // `&& min > max` adds a second condition (a "let chain", Rust 2024).
+    if let (Some(min), Some(max)) = (min, max)
+        && min > max
+    {
+        return Err(format!(
+            "{min_name} ({min:?}) is greater than {max_name} ({max:?})"
+        ));
+    }
+    Ok(())
 }
 
 /// Input arguments for the `get_sleep` tool.
@@ -147,22 +275,22 @@ impl GarminServer {
     /// result; `Err(message)` is sent as a tool error (`isError: true`), so
     /// the AI sees what went wrong instead of the whole call failing.
     #[tool(
-        description = "List the user's most recent Garmin Connect activities (runs, walks, strength sessions, etc.), newest first, optionally filtered by sport group (activity_type). Returns a JSON array with a summary of each activity. Each field name includes its unit (e.g. duration_min, distance_km, calories_kcal; heart rate in bpm). Speed is given the usual way for the sport: avg_pace_per_km (\"m:ss\") for running, walking and hiking; avg_pace_per_100m and distance_m for swimming; avg_speed_kmh otherwise. Fields that don't apply to an activity are omitted."
+        description = "List the user's Garmin Connect activities (runs, walks, strength sessions, etc.), newest first. Optional filters (all inclusive, combinable): sport group (activity_type), local start date range (start_date, end_date as YYYY-MM-DD), distance in km, duration in minutes, elevation gain in m. Only `limit` activities are returned (default 5, max 100), so raise it to get everything in a range. Returns a JSON array with a summary of each activity. Each field name includes its unit (e.g. duration_min, distance_km, calories_kcal; heart rate in bpm). Speed is given the usual way for the sport: avg_pace_per_km (\"m:ss\") for running, walking and hiking; avg_pace_per_100m and distance_m for swimming; avg_speed_kmh otherwise. Fields that don't apply to an activity are omitted."
     )]
     async fn list_activities(
         &self,
         Parameters(req): Parameters<ListActivitiesRequest>,
     ) -> Result<String, String> {
-        // Clamp `limit` to 1..=100: `.clamp(min, max)` returns the value
-        // pulled into that range.
-        let limit = req.limit.clamp(1, MAX_ACTIVITIES);
+        // Check the arguments and convert them to Garmin's units. A bad
+        // argument returns its message to the AI here, via `?`.
+        let query = req.into_query()?;
 
         // Call Garmin. `map_err` converts the `anyhow::Error` into a
         // `String`; `{e:#}` prints the error together with its context chain
         // (e.g. "GET ... failed: HTTP 500: ..."). `?` returns that `Err` early.
         let activities = self
             .garmin
-            .list_activities(req.start, limit, req.activity_type)
+            .list_activities(&query)
             .await
             .map_err(|e| format!("{e:#}"))?;
 
@@ -184,10 +312,8 @@ impl GarminServer {
         // `match` compares a value against patterns and runs the first arm
         // that fits. `Some(text)` binds the string inside to `text`.
         let date = match req.date {
-            // Parse the text as a date. `parse_from_str` returns a `Result`;
-            // `map_err` replaces its error with a message the AI can act on.
-            Some(text) => NaiveDate::parse_from_str(text.trim(), "%Y-%m-%d")
-                .map_err(|_| format!("invalid date {text:?}: expected YYYY-MM-DD"))?,
+            // Parse the text as a date; `?` returns a bad-date message early.
+            Some(text) => parse_date(&text)?,
             // No date given: use today in this computer's time zone.
             None => Local::now().date_naive(),
         };
@@ -232,5 +358,88 @@ impl ServerHandler for GarminServer {
             ))
             // Hint given to the AI client about what this server is for.
             .with_instructions("Tools for reading Garmin Connect data.")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Builds a request from tool-argument JSON, the way the client sends
+    /// it, and converts it to Garmin's query.
+    fn query(json: serde_json::Value) -> Result<ActivitiesQuery, String> {
+        let request: ListActivitiesRequest = serde_json::from_value(json).unwrap();
+        request.into_query()
+    }
+
+    #[test]
+    fn filters_are_converted_to_garmin_units() {
+        let q = query(serde_json::json!({
+            "start_date": "2026-10-01",
+            "end_date": " 2026-10-15 ",
+            "min_distance_km": 5.5,
+            "max_distance_km": 21.0975,
+            "min_duration_min": 30,
+            "max_duration_min": 90.5,
+            "min_elevation_gain_m": 100,
+            "max_elevation_gain_m": 500,
+        }))
+        .unwrap();
+        assert_eq!(
+            q,
+            ActivitiesQuery {
+                start: 0,
+                limit: 5,
+                activity_type: None,
+                start_date: NaiveDate::from_ymd_opt(2026, 10, 1),
+                end_date: NaiveDate::from_ymd_opt(2026, 10, 15),
+                min_distance: Some(5500),
+                // 21097.5 m rounds to a whole meter: Garmin rejects decimals.
+                max_distance: Some(21098),
+                min_duration: Some(1800),
+                max_duration: Some(5430),
+                min_elevation: Some(100),
+                max_elevation: Some(500),
+            }
+        );
+    }
+
+    #[test]
+    fn no_arguments_means_no_filters() {
+        let q = query(serde_json::json!({})).unwrap();
+        assert_eq!(
+            q,
+            ActivitiesQuery {
+                limit: 5,
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn limit_is_clamped() {
+        assert_eq!(query(serde_json::json!({"limit": 0})).unwrap().limit, 1);
+        assert_eq!(query(serde_json::json!({"limit": 500})).unwrap().limit, 100);
+    }
+
+    #[test]
+    fn bad_input_gets_a_clear_error() {
+        let err = |json| query(json).unwrap_err();
+        assert_eq!(
+            err(serde_json::json!({"start_date": "23.10.2026"})),
+            "invalid date \"23.10.2026\": expected YYYY-MM-DD"
+        );
+        assert_eq!(
+            err(serde_json::json!({"start_date": "2026-10-15", "end_date": "2026-10-01"})),
+            "start_date (2026-10-15) is greater than end_date (2026-10-01)"
+        );
+        assert_eq!(
+            err(serde_json::json!({"min_distance_km": 10, "max_distance_km": 5})),
+            "min_distance_km (10.0) is greater than max_distance_km (5.0)"
+        );
+        assert_eq!(
+            err(serde_json::json!({"min_duration_min": -1})),
+            "min_duration_min must not be negative, got -1"
+        );
     }
 }

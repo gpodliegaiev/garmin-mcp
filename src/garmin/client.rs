@@ -23,18 +23,51 @@ use super::{
 };
 use crate::config::Config;
 
-/// Query parameters for the activity search endpoint.
+/// Query parameters for the activity search endpoint, in Garmin's units.
 ///
 /// `Serialize` lets reqwest turn it into URL parameters. `camelCase` gives
-/// Garmin's spelling (`activityType`), and a `None` filter is left out of the
-/// URL entirely instead of being sent as an empty value.
-#[derive(Serialize)]
+/// Garmin's spelling (`activityType`, `minDistance`), and every `None` filter
+/// is left out of the URL entirely instead of being sent as an empty value.
+///
+/// Numbers are whole (`u64`): Garmin answers 404 to `minDistance=5000.5`.
+/// All ranges are inclusive. `Default` gives "no filters" (`start` 0,
+/// `limit` 0, every filter `None`), so callers can write
+/// `ActivitiesQuery { limit: 5, ..Default::default() }`.
+#[derive(Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ActivitiesQuery {
-    start: u32,
-    limit: u32,
+pub struct ActivitiesQuery {
+    /// Number of activities to skip (for paging).
+    pub start: u32,
+    /// Maximum number of activities to return.
+    pub limit: u32,
+    /// Only this sport group.
     #[serde(skip_serializing_if = "Option::is_none")]
-    activity_type: Option<ActivityTypeFilter>,
+    pub activity_type: Option<ActivityTypeFilter>,
+    /// Earliest local start date. chrono's `serde` feature writes a
+    /// `NaiveDate` as `YYYY-MM-DD`, the format Garmin expects.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_date: Option<NaiveDate>,
+    /// Latest local start date.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_date: Option<NaiveDate>,
+    /// Minimum distance, in meters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_distance: Option<u64>,
+    /// Maximum distance, in meters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_distance: Option<u64>,
+    /// Minimum timer duration (paused time excluded), in seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_duration: Option<u64>,
+    /// Maximum timer duration, in seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_duration: Option<u64>,
+    /// Minimum total elevation gain, in meters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_elevation: Option<u64>,
+    /// Maximum total elevation gain, in meters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_elevation: Option<u64>,
 }
 
 /// Give up on a request if Garmin does not answer within this time.
@@ -78,28 +111,19 @@ impl GarminClient {
         })
     }
 
-    /// Lists recent activities, newest first.
+    /// Lists activities matching `query`, newest first.
     ///
-    /// - `start`: how many activities to skip (for paging).
-    /// - `limit`: how many to return.
-    /// - `activity_type`: only return this sport group; `None` for all.
+    /// The parameters have different types (numbers, dates, an enum), so
+    /// they can't share one `[(&str, u32)]` slice. The `ActivitiesQuery`
+    /// struct holds them instead; reqwest turns it into
+    /// `?start=0&limit=5&activityType=running&minDistance=10000`.
     pub async fn list_activities(
         &self,
-        start: u32,
-        limit: u32,
-        activity_type: Option<ActivityTypeFilter>,
+        query: &ActivitiesQuery,
     ) -> anyhow::Result<Vec<ActivitySummary>> {
-        // The parameters have different types (numbers and an enum), so they
-        // can't share one `[(&str, u32)]` slice. A small struct holds them
-        // instead; reqwest turns it into `?start=0&limit=5&activityType=running`.
-        let query = ActivitiesQuery {
-            start,
-            limit,
-            activity_type,
-        };
         // Garmin returns a JSON array, which serde turns into a
         // `Vec<Activity>` (a growable list).
-        let activities: Vec<Activity> = self.get_json(ACTIVITIES_PATH, &query).await?;
+        let activities: Vec<Activity> = self.get_json(ACTIVITIES_PATH, query).await?;
         // Convert each raw activity into the tool's output shape:
         // `.into_iter()` walks the list, taking ownership of each item;
         // `.map(...)` converts each one; `.collect()` gathers the results
@@ -215,6 +239,7 @@ mod tests {
             start: 0,
             limit: 5,
             activity_type: Some(ActivityTypeFilter::FitnessEquipment),
+            ..Default::default()
         };
         assert_eq!(
             query_string(&query),
@@ -223,12 +248,33 @@ mod tests {
     }
 
     #[test]
-    fn missing_activity_type_is_left_out() {
+    fn missing_filters_are_left_out() {
+        // `..Default::default()` fills every field not written out here
+        // with its default (`None` for all the filters).
         let query = ActivitiesQuery {
             start: 10,
             limit: 3,
-            activity_type: None,
+            ..Default::default()
         };
         assert_eq!(query_string(&query), "start=10&limit=3");
+    }
+
+    #[test]
+    fn range_filters_are_sent_in_garmin_spelling() {
+        let query = ActivitiesQuery {
+            start: 0,
+            limit: 5,
+            start_date: NaiveDate::from_ymd_opt(2026, 10, 1),
+            end_date: NaiveDate::from_ymd_opt(2026, 10, 15),
+            min_distance: Some(10_000),
+            max_duration: Some(5400),
+            min_elevation: Some(200),
+            ..Default::default()
+        };
+        assert_eq!(
+            query_string(&query),
+            "start=0&limit=5&startDate=2026-10-01&endDate=2026-10-15\
+             &minDistance=10000&maxDuration=5400&minElevation=200"
+        );
     }
 }
