@@ -109,7 +109,7 @@ impl GarminServer {
 // new tool, add another `#[tool]` method here.
 #[tool_router]
 impl GarminServer {
-    /// Lists the user's most recent Garmin activities as JSON.
+    /// Lists the user's most recent Garmin activities as a compact JSON summary.
     ///
     /// `#[tool(...)]` marks this method as an MCP tool. The tool's name is the
     /// method name (`list_activities`), and `description` is shown to the AI
@@ -125,7 +125,7 @@ impl GarminServer {
     /// result; `Err(message)` is sent as a tool error (`isError: true`), so
     /// the AI sees what went wrong instead of the whole call failing.
     #[tool(
-        description = "List the user's most recent Garmin Connect activities (runs, rides, etc.), newest first. Returns the raw Garmin JSON."
+        description = "List the user's most recent Garmin Connect activities (runs, walks, strength sessions, etc.), newest first. Returns a JSON array with a summary of each activity. Units: distance and elevation in meters, durations in seconds, speed in meters per second, heart rate in bpm, calories in kcal. Fields that don't apply to an activity are omitted."
     )]
     async fn list_activities(
         &self,
@@ -144,8 +144,9 @@ impl GarminServer {
             .await
             .map_err(|e| format!("{e:#}"))?;
 
-        // Turn the JSON value back into indented text for the client.
-        serde_json::to_string_pretty(&activities).map_err(|e| e.to_string())
+        // Turn the list of `Activity` structs into JSON text for the client.
+        // Compact (no indentation) to keep the result small for the AI.
+        serde_json::to_string(&activities).map_err(|e| e.to_string())
     }
 }
 
