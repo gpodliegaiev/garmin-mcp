@@ -35,6 +35,16 @@ cargo test <name>           # single test by name substring
   - `#[tool_handler]` on the `ServerHandler` impl wires the router in; `get_info` declares capabilities, server info, and instructions.
 - To add a tool: define a request struct, then add a `#[tool]` method to the `#[tool_router]` impl.
 
+## Garmin API reference
+
+Local copy of Garmin's swagger docs (the online page renders client-side and can't be fetched as a spec):
+
+- `docs/garmin-api.md`: endpoint index with params and response schema names. Check it first when adding a tool or param.
+- `docs/garmin-openapi.json`: full OpenAPI 3.0 spec, including response schemas (`components.schemas`, e.g. `SummarizedActivityDTO`, `DailySleepDTO`).
+- `python3 docs/update_garmin_spec.py` regenerates both from developer.garmin.com.
+
+The spec omits some behavior found by probing (see the quirks under Architecture), and it doesn't list the token endpoint.
+
 ## Code comments
 
 The maintainer is new to Rust. Comment code generously so it can be read as a learning resource:

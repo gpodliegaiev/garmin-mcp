@@ -130,3 +130,11 @@ To add a tool:
 3. Add a `#[tool]` method in `server.rs`.
 
 The code is commented heavily, as a Rust learning resource.
+
+### Garmin API docs
+
+`docs/` holds a local copy of Garmin's [swagger docs](https://developer.garmin.com/gc-developer-program/personal/swagger-docs/):
+- `garmin-api.md`: a readable index of every endpoint.
+- `garmin-openapi.json`: the full OpenAPI spec.
+
+To refresh both, run `python3 docs/update_garmin_spec.py`.
