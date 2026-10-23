@@ -2,3 +2,6 @@
 
 # Local secrets (Garmin API key). Never commit.
 .env
+
+# macOS Finder metadata
+.DS_Store
