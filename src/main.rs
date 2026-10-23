@@ -9,6 +9,8 @@
 // `mod server;` tells the compiler that a module named `server` exists and
 // that its code is in `src/server.rs`. Without this line that file would be
 // ignored entirely.
+mod config;
+mod garmin;
 mod server;
 
 // `use` brings names into scope so we can write `stdio()` instead of
@@ -23,7 +25,7 @@ use rmcp::{ServiceExt, transport::stdio};
 
 // `crate::` means "starting from the root of this project". This imports the
 // `GarminServer` struct defined in `src/server.rs`.
-use crate::server::GarminServer;
+use crate::{config::Config, garmin::GarminClient, server::GarminServer};
 
 /// Starts the MCP server and keeps it running until the client disconnects.
 ///
@@ -44,15 +46,28 @@ async fn main() -> anyhow::Result<()> {
     // The `!` means `eprintln!` is a macro, not a regular function.
     eprintln!("garmin-mcp starting on stdio");
 
+    // Read settings (API key, base URL) before serving anything. If the key
+    // is missing, `?` stops the program here with a clear error message
+    // instead of failing later on the first tool call.
+    let config = Config::from_env()?;
+    // `{:?}` uses our custom `Debug` impl, which hides the API key.
+    eprintln!("config loaded: {config:?}");
+
+    // Build the Garmin API client. No network call happens yet; the first
+    // bearer token is fetched on the first tool call.
+    // `&config` lends the config to `new` without giving it away.
+    let garmin = GarminClient::new(&config)?;
+
     // Create our server and start serving it over stdin/stdout.
-    // - `GarminServer::new()` builds the server value (see `server.rs`).
+    // - `GarminServer::new(garmin)` builds the server value (see
+    //   `server.rs`), moving the Garmin client into it.
     // - `.serve(stdio())` performs the MCP handshake with the client and
     //   returns a handle to the running service.
     // - `.await` pauses here until that async work finishes, without blocking
     //   the thread.
     // - `?` is error propagation: if the result is an error, return it from
     //   `main` immediately; if it is `Ok(value)`, unwrap it to `value`.
-    let service = GarminServer::new().serve(stdio()).await?;
+    let service = GarminServer::new(garmin).serve(stdio()).await?;
 
     // Wait until the client closes the connection (or an error occurs).
     // While we wait, the service handles incoming requests in the background.

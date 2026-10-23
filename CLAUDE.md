@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-`garmin-mcp` is an MCP (Model Context Protocol) server in Rust (edition 2024) that exposes tools for reading Garmin Connect data. Early stage: only a placeholder `echo` tool exists so far.
+`garmin-mcp` is an MCP (Model Context Protocol) server in Rust (edition 2024) that exposes tools for reading Garmin Connect data. Early stage: one tool so far, `list_activities`.
 
 ## Commands
 
@@ -20,7 +20,10 @@ cargo test <name>           # single test by name substring
 ## Architecture
 
 - Built on the `rmcp` crate (feature `transport-io`) with a `tokio` multi-thread runtime.
-- `src/main.rs` — entry point; constructs `GarminServer` and serves it over stdio transport.
+- `src/main.rs` — entry point; loads `Config`, builds `GarminClient`, constructs `GarminServer` and serves it over stdio transport.
+- `src/config.rs` — `Config` from env vars / `.env` (`GARMIN_API_KEY` required, `GARMIN_BASE_URL` optional). Custom `Debug` hides the key.
+- `src/garmin/auth.rs` — `TokenManager`: `POST /personalapitoken-service/personal-api/personal-api-key/token` with `Authorization: ApiKey <key>` returns a bearer JWT as plain text, valid 24h. Cached behind a tokio `Mutex`, refreshed 5 min before expiry. Uses `SystemTime`, not `Instant` (macOS `Instant` pauses during sleep).
+- `src/garmin/client.rs` — `GarminClient`: authenticated GETs with `Authorization: Bearer <token>`; on 401 invalidates the token and retries once. API calls (e.g. `list_activities`) return `serde_json::Value` until response types are modelled.
 - `src/server.rs` — `GarminServer`, the MCP handler:
   - Tools are async methods in the `#[tool_router] impl GarminServer` block, each annotated `#[tool(description = ...)]`.
   - Tool inputs are structs deriving `Deserialize` + `JsonSchema` (via `rmcp::schemars`), received as `Parameters<T>`. Doc comments on fields become the JSON schema descriptions shown to clients.
@@ -37,6 +40,11 @@ The maintainer is new to Rust. Comment code generously so it can be read as a le
 - Inside function bodies, add `//` comments for each non-obvious step, describing what it does and what data flows through it.
 - Keep comments accurate when changing code; update or remove stale ones.
 
+## Configuration
+
+Copy `.env.example` to `.env` and set `GARMIN_API_KEY`. `.env` is git-ignored. Real env vars (e.g. from the MCP client config) override `.env`.
+
 ## Constraints
 
 - **stdout is the MCP protocol channel.** Never `println!` or write anything else to stdout; log to stderr (`eprintln!`).
+- Never log or print the API key or bearer token.
