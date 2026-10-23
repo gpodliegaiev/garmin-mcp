@@ -6,7 +6,7 @@
 //! serde ignores any JSON field that has no matching struct field.
 
 use rmcp::schemars::{self, JsonSchema};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Sport groups accepted by the activity list's `activityType` filter.
 ///
@@ -96,16 +96,22 @@ pub struct Activity {
     pub location_name: Option<String>,
 
     /// Total duration in seconds.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // Rounded to 0.1 s on output; Garmin's extra digits are milliseconds and
+    // float noise, irrelevant for any health evaluation.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "round_1")]
     pub duration: Option<f64>,
     /// Time spent actually moving, in seconds.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "round_1")]
     pub moving_duration: Option<f64>,
     /// Distance in meters (0 for activities without distance).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // Rounded to centimeters: this is Garmin's real precision, the longer
+    // tail (e.g. `4380.18017578125`) is float32 conversion noise.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "round_2")]
     pub distance: Option<f64>,
     /// Average speed in meters per second.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // Rounded to 3 decimals, Garmin's real precision (`1.1710000038` is
+    // float noise for `1.171`). Kept that fine because pace is derived from it.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "round_3")]
     pub average_speed: Option<f64>,
     /// Total climb in meters.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -133,16 +139,19 @@ pub struct Activity {
     pub calories: Option<f64>,
 
     /// Aerobic training effect, 0.0 to 5.0.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // Garmin's training effect scale has 0.1 steps; `2.4000000953674316` is
+    // float noise for `2.4`, so rounding loses nothing.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "round_1")]
     pub aerobic_training_effect: Option<f64>,
     /// Anaerobic training effect, 0.0 to 5.0.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "round_1")]
     pub anaerobic_training_effect: Option<f64>,
     /// Garmin's label for the main benefit, e.g. `TEMPO`, `ANAEROBIC_CAPACITY`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub training_effect_label: Option<String>,
     /// Garmin's training load score for this activity.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // Rounded to 0.1; Garmin itself only shows whole numbers.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "round_1")]
     pub activity_training_load: Option<f64>,
     /// Change in Body Battery during the activity (usually negative).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -160,6 +169,50 @@ pub struct Activity {
     /// Strength training: number of repetitions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_reps: Option<u32>,
+}
+
+/// Writes an `Option<f64>` rounded to `decimals` places (or `null`).
+///
+/// Garmin stores many numbers as 32-bit floats. Converted to the 64-bit
+/// floats we use, `2.4` turns into `2.4000000953674316`: the extra digits are
+/// conversion noise, not real measurement detail. Rounding to the value's
+/// real precision gives shorter, cleaner output without losing information.
+///
+/// `S: Serializer` is generic like `D: Deserializer` below: "any output
+/// format". `S::Ok` and `S::Error` are that format's success and error types.
+fn serialize_rounded<S: Serializer>(
+    value: &Option<f64>,
+    decimals: i32,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match value {
+        // `*v` *dereferences* the `&f64` borrowed from the `Option` to get the
+        // number itself. `10f64.powi(n)` is 10 to the power `n`.
+        Some(v) => {
+            let factor = 10f64.powi(decimals);
+            serializer.serialize_some(&((*v * factor).round() / factor))
+        }
+        None => serializer.serialize_none(),
+    }
+}
+
+// `#[serde(serialize_with = "...")]` needs a function with exactly the shape
+// `fn(&T, S) -> Result<S::Ok, S::Error>`, so the number of decimals can't be
+// an extra argument there. These three small wrappers fix it per field.
+
+/// Rounds to 1 decimal place when serializing.
+fn round_1<S: Serializer>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error> {
+    serialize_rounded(value, 1, serializer)
+}
+
+/// Rounds to 2 decimal places when serializing.
+fn round_2<S: Serializer>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error> {
+    serialize_rounded(value, 2, serializer)
+}
+
+/// Rounds to 3 decimal places when serializing.
+fn round_3<S: Serializer>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error> {
+    serialize_rounded(value, 3, serializer)
 }
 
 /// Reads Garmin's `activityType` object and returns only its `typeKey`.
@@ -385,6 +438,32 @@ mod tests {
         assert_eq!(activity.total_reps, Some(285));
         // Not in the JSON, so it falls back to `None`.
         assert_eq!(activity.avg_power, None);
+    }
+
+    #[test]
+    fn rounds_float_noise_on_output() {
+        // Raw values exactly as Garmin sends them.
+        let json = r#"{
+            "activityId": 1,
+            "activityType": {"typeKey": "walking"},
+            "duration": 3741.52587890625,
+            "distance": 4380.18017578125,
+            "averageSpeed": 1.1710000038146973,
+            "aerobicTrainingEffect": 2.4000000953674316,
+            "activityTrainingLoad": 62.689056396484375,
+            "averageHR": 83.0
+        }"#;
+        let activity: Activity = serde_json::from_str(json).unwrap();
+        let out = serde_json::to_value(&activity).unwrap();
+        assert_eq!(out["duration"], 3741.5);
+        assert_eq!(out["distance"], 4380.18);
+        assert_eq!(out["average_speed"], 1.171);
+        assert_eq!(out["aerobic_training_effect"], 2.4);
+        assert_eq!(out["activity_training_load"], 62.7);
+        // Fields without rounding are written unchanged.
+        assert_eq!(out["average_hr"], 83.0);
+        // Missing values are still skipped, not written as rounded `null`s.
+        assert!(out.get("moving_duration").is_none());
     }
 
     #[test]
