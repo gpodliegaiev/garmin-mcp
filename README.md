@@ -9,7 +9,15 @@ An [MCP](https://modelcontextprotocol.io) server, written in Rust, that gives AI
 | `list_activities` | Your most recent activities, newest first: name, sport, start time, duration, distance, heart rate, calories, training effect, and for strength training, sets and reps. | `start` (default 0), `limit` (default 5, max 100), `activity_type` (optional, see below) |
 | `get_sleep` | One night's sleep: bed and wake times, deep/light/REM/awake durations, sleep score, average heart rate, respiration and stress, and recommended sleep. | `date` as `YYYY-MM-DD` (default today) |
 
-Units follow Garmin: meters, seconds, meters per second, bpm, kcal. Fields that don't apply to an activity are left out.
+Each field name includes its unit (`duration_min`, `distance_km`, `elevation_gain_m`, `calories_kcal`). Heart rate is in bpm. Speed is given in the usual way for each sport:
+
+| Sport | Distance | Speed |
+|---|---|---|
+| Running, walking, hiking | `distance_km` | `avg_pace_per_km`, e.g. `"6:23"` |
+| Swimming | `distance_m` | `avg_pace_per_100m`, e.g. `"2:05"` |
+| Cycling and other sports | `distance_km` | `avg_speed_kmh` |
+
+Fields that don't apply to an activity are left out. Examples: distance for strength training, moving time for indoor activities. Sleep durations are in minutes.
 
 **`activity_type` values:** `running`, `cycling`, `walking`, `hiking`, `swimming`, `fitness_equipment`, `other`, `multi_sport`, `winter_sports`, `water_sports`, `diving`, `team_sports`, `racket_sports`.
 

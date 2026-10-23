@@ -147,7 +147,7 @@ impl GarminServer {
     /// result; `Err(message)` is sent as a tool error (`isError: true`), so
     /// the AI sees what went wrong instead of the whole call failing.
     #[tool(
-        description = "List the user's most recent Garmin Connect activities (runs, walks, strength sessions, etc.), newest first, optionally filtered by sport group (activity_type). Returns a JSON array with a summary of each activity. Units: distance and elevation in meters, durations in seconds, speed in meters per second, heart rate in bpm, calories in kcal. Fields that don't apply to an activity are omitted."
+        description = "List the user's most recent Garmin Connect activities (runs, walks, strength sessions, etc.), newest first, optionally filtered by sport group (activity_type). Returns a JSON array with a summary of each activity. Each field name includes its unit (e.g. duration_min, distance_km, calories_kcal; heart rate in bpm). Speed is given the usual way for the sport: avg_pace_per_km (\"m:ss\") for running, walking and hiking; avg_pace_per_100m and distance_m for swimming; avg_speed_kmh otherwise. Fields that don't apply to an activity are omitted."
     )]
     async fn list_activities(
         &self,
@@ -174,7 +174,7 @@ impl GarminServer {
     /// Returns one night's sleep summary as compact JSON, or a short message
     /// if Garmin has no sleep recorded for that day.
     #[tool(
-        description = "Get the user's sleep for one night from Garmin Connect: bed and wake times (local), total and per-stage sleep (deep, light, REM, awake), sleep score and rating, stage percentages, average heart rate, respiration and stress during sleep, and recommended sleep. Garmin files a night under the day the user woke up, so last night's sleep is today's date. Durations in seconds unless the field name says minutes."
+        description = "Get the user's sleep for one night from Garmin Connect: bed and wake times (local), total and per-stage sleep (deep, light, REM, awake), sleep score and rating, stage percentages, average heart rate, respiration and stress during sleep, and recommended sleep. Garmin files a night under the day the user woke up, so last night's sleep is today's date. All durations are in minutes."
     )]
     async fn get_sleep(
         &self,

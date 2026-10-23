@@ -19,7 +19,7 @@ use serde::de::DeserializeOwned;
 // `crate::garmin::auth::TokenManager`.
 use super::{
     auth::TokenManager,
-    types::{Activity, ActivityTypeFilter, DailySleep, SleepSummary},
+    types::{Activity, ActivitySummary, ActivityTypeFilter, DailySleep, SleepSummary},
 };
 use crate::config::Config;
 
@@ -88,7 +88,7 @@ impl GarminClient {
         start: u32,
         limit: u32,
         activity_type: Option<ActivityTypeFilter>,
-    ) -> anyhow::Result<Vec<Activity>> {
+    ) -> anyhow::Result<Vec<ActivitySummary>> {
         // The parameters have different types (numbers and an enum), so they
         // can't share one `[(&str, u32)]` slice. A small struct holds them
         // instead; reqwest turns it into `?start=0&limit=5&activityType=running`.
@@ -99,7 +99,12 @@ impl GarminClient {
         };
         // Garmin returns a JSON array, which serde turns into a
         // `Vec<Activity>` (a growable list).
-        self.get_json(ACTIVITIES_PATH, &query).await
+        let activities: Vec<Activity> = self.get_json(ACTIVITIES_PATH, &query).await?;
+        // Convert each raw activity into the tool's output shape:
+        // `.into_iter()` walks the list, taking ownership of each item;
+        // `.map(...)` converts each one; `.collect()` gathers the results
+        // into a new `Vec` (the type comes from the function's return type).
+        Ok(activities.into_iter().map(Activity::into_summary).collect())
     }
 
     /// Gets the sleep summary for one night.

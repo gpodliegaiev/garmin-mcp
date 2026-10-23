@@ -6,7 +6,7 @@
 //! serde ignores any JSON field that has no matching struct field.
 
 use rmcp::schemars::{self, JsonSchema};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Sport groups accepted by the activity list's `activityType` filter.
 ///
@@ -55,39 +55,76 @@ pub enum ActivityTypeFilter {
     RacketSports,
 }
 
-/// One activity (run, walk, strength session, ...) from the activity list.
+/// One activity (run, walk, strength session, ...) as Garmin sends it.
 ///
-/// The same struct is used in both directions:
-/// - *Deserialize* reads Garmin's JSON, whose field names are camelCase
-///   (`startTimeLocal`).
-/// - *Serialize* writes our tool output, with snake_case names
-///   (`start_time_local`), matching the Rust field names.
+/// Only used for reading (`Deserialize`). It is converted into the
+/// [`ActivitySummary`] the tool returns, which uses friendlier units.
 ///
-/// `rename_all(deserialize = "camelCase")` applies the camelCase names only
-/// when reading; when writing, the Rust names are used as they are.
-///
-/// Fields wrapped in `Option<T>` may be missing: many only exist for some
-/// sports (e.g. `total_reps` for strength training). `#[serde(default)]` on
-/// the struct means "a missing field becomes its default" (`None` for an
-/// `Option`), and `skip_serializing_if` leaves `None` fields out of the
-/// output entirely instead of writing `null`.
+/// `rename_all = "camelCase"` matches Garmin's field names
+/// (`startTimeLocal` <-> `start_time_local`). Fields wrapped in `Option<T>`
+/// may be missing: many only exist for some sports (e.g. `total_reps` for
+/// strength training). `#[serde(default)]` on the struct means "a missing
+/// field becomes its default" (`None` for an `Option`).
 ///
 /// Units are Garmin's: meters, seconds, meters per second.
-// `Default` is derived so serde's `default` attribute (below) can fill in
+// `Default` is derived so serde's `default` attribute (above) can fill in
 // missing fields: `0` for numbers, `""` for strings, `None` for options.
-#[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all(deserialize = "camelCase"), default)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Activity {
+    activity_id: u64,
+    activity_name: Option<String>,
+    // Garmin sends `"activityType": {"typeId": 1, "typeKey": "running", ...}`.
+    // `deserialize_with` names a function (below) that pulls out just the
+    // `typeKey` string.
+    #[serde(deserialize_with = "type_key")]
+    activity_type: String,
+    start_time_local: String,
+    location_name: Option<String>,
+    /// Seconds.
+    duration: Option<f64>,
+    /// Seconds.
+    moving_duration: Option<f64>,
+    /// Meters.
+    distance: Option<f64>,
+    /// Meters per second.
+    average_speed: Option<f64>,
+    /// Meters.
+    elevation_gain: Option<f64>,
+    steps: Option<u64>,
+    // Garmin writes `averageHR`, not `averageHr`, so the automatic camelCase
+    // rename would not match; `rename` sets it by hand.
+    #[serde(rename = "averageHR")]
+    average_hr: Option<f64>,
+    #[serde(rename = "maxHR")]
+    max_hr: Option<f64>,
+    avg_power: Option<f64>,
+    calories: Option<f64>,
+    aerobic_training_effect: Option<f64>,
+    anaerobic_training_effect: Option<f64>,
+    training_effect_label: Option<String>,
+    activity_training_load: Option<f64>,
+    difference_body_battery: Option<i64>,
+    moderate_intensity_minutes: Option<u32>,
+    vigorous_intensity_minutes: Option<u32>,
+    total_sets: Option<u32>,
+    total_reps: Option<u32>,
+}
+
+/// One activity, in the shape and units the tool returns.
+///
+/// Only used for writing (`Serialize`). Each unit is in the field name.
+/// `skip_serializing_if` leaves `None` fields out of the output entirely
+/// instead of writing `null`, so each activity only shows what applies to
+/// its sport.
+#[derive(Debug, Serialize)]
+pub struct ActivitySummary {
     /// Garmin's unique id for the activity.
     pub activity_id: u64,
     /// Name shown in Garmin Connect, e.g. "Morning Run".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub activity_name: Option<String>,
     /// Sport, e.g. `running`, `walking`, `strength_training`.
-    // Garmin sends `"activityType": {"typeId": 1, "typeKey": "running", ...}`.
-    // `deserialize_with` names a function (below) that pulls out just the
-    // `typeKey` string, so the output is simply `"activity_type": "running"`.
-    #[serde(deserialize_with = "type_key")]
     pub activity_type: String,
     /// Start time in the activity's local time zone, "YYYY-MM-DD HH:MM:SS".
     pub start_time_local: String,
@@ -95,63 +132,58 @@ pub struct Activity {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location_name: Option<String>,
 
-    /// Total duration in seconds.
-    // Rounded to 0.1 s on output; Garmin's extra digits are milliseconds and
-    // float noise, irrelevant for any health evaluation.
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "round_1")]
-    pub duration: Option<f64>,
-    /// Time spent actually moving, in seconds.
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "round_1")]
-    pub moving_duration: Option<f64>,
-    /// Distance in meters (0 for activities without distance).
-    // Rounded to centimeters: this is Garmin's real precision, the longer
-    // tail (e.g. `4380.18017578125`) is float32 conversion noise.
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "round_2")]
-    pub distance: Option<f64>,
-    /// Average speed in meters per second.
-    // Rounded to 3 decimals, Garmin's real precision (`1.1710000038` is
-    // float noise for `1.171`). Kept that fine because pace is derived from it.
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "round_3")]
-    pub average_speed: Option<f64>,
+    /// Total duration in minutes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_min: Option<f64>,
+    /// Time spent actually moving, in minutes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moving_duration_min: Option<f64>,
+    /// Distance in kilometers (all sports except swimming).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distance_km: Option<f64>,
+    /// Distance in meters (swimming only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distance_m: Option<f64>,
+    /// Average pace as "minutes:seconds" per km (running, walking, hiking).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avg_pace_per_km: Option<String>,
+    /// Average pace as "minutes:seconds" per 100 m (swimming).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avg_pace_per_100m: Option<String>,
+    /// Average speed in km/h (cycling and other distance sports).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avg_speed_kmh: Option<f64>,
     /// Total climb in meters.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub elevation_gain: Option<f64>,
+    pub elevation_gain_m: Option<f64>,
     /// Step count.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub steps: Option<u64>,
 
     /// Average heart rate in beats per minute.
-    // Garmin writes `averageHR`, not `averageHr`, so the automatic camelCase
-    // rename would not match; `rename(deserialize = ...)` sets it by hand.
-    #[serde(
-        rename(deserialize = "averageHR"),
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub average_hr: Option<f64>,
     /// Maximum heart rate in beats per minute.
-    #[serde(rename(deserialize = "maxHR"), skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_hr: Option<f64>,
     /// Average power in watts (only with a power meter or running power).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub avg_power: Option<f64>,
+    pub avg_power_w: Option<f64>,
     /// Active calories burned (kcal).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub calories: Option<f64>,
+    pub calories_kcal: Option<f64>,
 
     /// Aerobic training effect, 0.0 to 5.0.
-    // Garmin's training effect scale has 0.1 steps; `2.4000000953674316` is
-    // float noise for `2.4`, so rounding loses nothing.
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "round_1")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub aerobic_training_effect: Option<f64>,
     /// Anaerobic training effect, 0.0 to 5.0.
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "round_1")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub anaerobic_training_effect: Option<f64>,
     /// Garmin's label for the main benefit, e.g. `TEMPO`, `ANAEROBIC_CAPACITY`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub training_effect_label: Option<String>,
     /// Garmin's training load score for this activity.
-    // Rounded to 0.1; Garmin itself only shows whole numbers.
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "round_1")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub activity_training_load: Option<f64>,
     /// Change in Body Battery during the activity (usually negative).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -171,53 +203,134 @@ pub struct Activity {
     pub total_reps: Option<u32>,
 }
 
-/// Writes an `Option<f64>` rounded to `decimals` places (or `null`).
+/// How speed is usually expressed for a sport.
 ///
-/// Garmin stores many numbers as 32-bit floats. Converted to the 64-bit
-/// floats we use, `2.4` turns into `2.4000000953674316`: the extra digits are
-/// conversion noise, not real measurement detail. Rounding to the value's
-/// real precision gives shorter, cleaner output without losing information.
-///
-/// `S: Serializer` is generic like `D: Deserializer` below: "any output
-/// format". `S::Ok` and `S::Error` are that format's success and error types.
-fn serialize_rounded<S: Serializer>(
-    value: &Option<f64>,
-    decimals: i32,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    match value {
-        // `*v` *dereferences* the `&f64` borrowed from the `Option` to get the
-        // number itself. `10f64.powi(n)` is 10 to the power `n`.
-        Some(v) => {
-            let factor = 10f64.powi(decimals);
-            serializer.serialize_some(&((*v * factor).round() / factor))
+/// A plain `enum` with no data in its variants, used only inside this file.
+enum SpeedStyle {
+    /// Minutes per kilometer: running, walking, hiking.
+    PacePerKm,
+    /// Minutes per 100 meters: swimming.
+    PacePer100m,
+    /// Kilometers per hour: cycling and everything else.
+    KmPerHour,
+}
+
+impl SpeedStyle {
+    /// Picks the style from Garmin's activity `typeKey`.
+    ///
+    /// Matches on parts of the name so all variants are covered, e.g.
+    /// `treadmill_running`, `trail_running`, `virtual_run`, `lap_swimming`,
+    /// `open_water_swimming`, `casual_walking`.
+    fn for_activity(type_key: &str) -> Self {
+        if type_key.contains("swim") {
+            Self::PacePer100m
+        } else if type_key.contains("run") || type_key.contains("walk") || type_key.contains("hik")
+        {
+            Self::PacePerKm
+        } else {
+            Self::KmPerHour
         }
-        None => serializer.serialize_none(),
     }
 }
 
-// `#[serde(serialize_with = "...")]` needs a function with exactly the shape
-// `fn(&T, S) -> Result<S::Ok, S::Error>`, so the number of decimals can't be
-// an extra argument there. These three small wrappers fix it per field.
+impl Activity {
+    /// Converts Garmin's raw activity into the tool's [`ActivitySummary`].
+    ///
+    /// Takes `self` by value, so strings are moved, not copied. Rounding only
+    /// removes detail that is irrelevant for health evaluation; Garmin stores
+    /// many values as 32-bit floats, so e.g. `2.4` arrives as
+    /// `2.4000000953674316` and the extra digits are only conversion noise.
+    pub fn into_summary(self) -> ActivitySummary {
+        // Distance and speed only make sense if the activity covered ground.
+        // Strength training reports `0.0` for both; treat that as "none".
+        // `.filter(|d| *d > 0.0)` turns `Some(0.0)` into `None`; the `*`
+        // dereferences the `&f64` the closure receives.
+        let distance = self.distance.filter(|d| *d > 0.0);
+        let speed = self.average_speed.filter(|v| *v > 0.0);
+        // Indoor activities (e.g. indoor cycling) report a moving time of 0
+        // because Garmin doesn't track it there. 0 would look like "never
+        // moved", so leave the field out instead.
+        let moving_duration = self.moving_duration.filter(|s| *s > 0.0);
 
-/// Rounds to 1 decimal place when serializing.
-fn round_1<S: Serializer>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error> {
-    serialize_rounded(value, 1, serializer)
+        let style = SpeedStyle::for_activity(&self.activity_type);
+
+        // Swimming keeps meters; everything else uses km with 3 decimals,
+        // which is still meter precision.
+        // `matches!(value, pattern)` is `true` if the value fits the pattern.
+        let is_swim = matches!(style, SpeedStyle::PacePer100m);
+        let (distance_km, distance_m) = if is_swim {
+            (None, distance.map(|m| round(m, 0)))
+        } else {
+            (distance.map(|m| round(m / 1000.0, 3)), None)
+        };
+
+        // Exactly one of the three speed fields is filled, depending on the
+        // sport. A `match` must handle every variant of the enum; the
+        // compiler checks that none is forgotten.
+        // Pace = time per distance = distance / speed (in seconds).
+        let (avg_pace_per_km, avg_pace_per_100m, avg_speed_kmh) = match style {
+            SpeedStyle::PacePerKm => (speed.map(|v| format_pace(1000.0 / v)), None, None),
+            SpeedStyle::PacePer100m => (None, speed.map(|v| format_pace(100.0 / v)), None),
+            // m/s to km/h: multiply by 3600 s/h and divide by 1000 m/km.
+            SpeedStyle::KmPerHour => (None, None, speed.map(|v| round(v * 3.6, 1))),
+        };
+
+        ActivitySummary {
+            activity_id: self.activity_id,
+            activity_name: self.activity_name,
+            activity_type: self.activity_type,
+            start_time_local: self.start_time_local,
+            location_name: self.location_name,
+            // Seconds to minutes. 2 decimals = 0.6 s precision.
+            duration_min: self.duration.map(|s| round(s / 60.0, 2)),
+            moving_duration_min: moving_duration.map(|s| round(s / 60.0, 2)),
+            distance_km,
+            distance_m,
+            avg_pace_per_km,
+            avg_pace_per_100m,
+            avg_speed_kmh,
+            elevation_gain_m: self.elevation_gain,
+            steps: self.steps,
+            average_hr: self.average_hr,
+            max_hr: self.max_hr,
+            avg_power_w: self.avg_power,
+            calories_kcal: self.calories,
+            // Training effect uses 0.1 steps, so 1 decimal loses nothing.
+            aerobic_training_effect: self.aerobic_training_effect.map(|v| round(v, 1)),
+            anaerobic_training_effect: self.anaerobic_training_effect.map(|v| round(v, 1)),
+            training_effect_label: self.training_effect_label,
+            // Garmin itself only shows whole numbers for load.
+            activity_training_load: self.activity_training_load.map(|v| round(v, 1)),
+            difference_body_battery: self.difference_body_battery,
+            moderate_intensity_minutes: self.moderate_intensity_minutes,
+            vigorous_intensity_minutes: self.vigorous_intensity_minutes,
+            total_sets: self.total_sets,
+            total_reps: self.total_reps,
+        }
+    }
 }
 
-/// Rounds to 2 decimal places when serializing.
-fn round_2<S: Serializer>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error> {
-    serialize_rounded(value, 2, serializer)
+/// Rounds `value` to `decimals` decimal places.
+fn round(value: f64, decimals: i32) -> f64 {
+    // `10f64.powi(n)` is 10 to the power `n` (`f64` is the number type, and
+    // `10f64` is the literal 10 written as an `f64`).
+    let factor = 10f64.powi(decimals);
+    (value * factor).round() / factor
 }
 
-/// Rounds to 3 decimal places when serializing.
-fn round_3<S: Serializer>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error> {
-    serialize_rounded(value, 3, serializer)
+/// Formats a number of seconds as "minutes:seconds", e.g. `383.4` -> "6:23".
+fn format_pace(seconds: f64) -> String {
+    // Round to whole seconds first, so 359.6 s becomes "6:00", not "5:60".
+    // `as u64` converts the float to an unsigned integer.
+    let total = seconds.round() as u64;
+    // `/` on integers divides and drops the remainder; `%` is the remainder.
+    // `{:02}` pads with a leading zero to 2 digits ("6:05", not "6:5").
+    format!("{}:{:02}", total / 60, total % 60)
 }
 
 /// Reads Garmin's `activityType` object and returns only its `typeKey`.
 ///
-/// Used through `#[serde(deserialize_with = "type_key")]` above.
+/// Used through `#[serde(deserialize_with = "type_key")]` on [`Activity`].
 ///
 /// The signature looks scary but is standard serde boilerplate:
 /// - `'de` is a *lifetime*: a name for "how long the input data lives".
@@ -315,13 +428,15 @@ pub struct SleepSummary {
     pub sleep_start_local: Option<String>,
     /// Wake-up time, local time, "YYYY-MM-DD HH:MM:SS".
     pub sleep_end_local: Option<String>,
-    /// Total time asleep, in seconds.
-    pub total_sleep_seconds: Option<u32>,
-    pub deep_sleep_seconds: Option<u32>,
-    pub light_sleep_seconds: Option<u32>,
-    pub rem_sleep_seconds: Option<u32>,
-    pub awake_seconds: Option<u32>,
-    pub nap_seconds: Option<u32>,
+    /// Total time asleep, in minutes.
+    pub total_sleep_minutes: Option<f64>,
+    /// Time in each sleep stage, in minutes.
+    pub deep_sleep_minutes: Option<f64>,
+    pub light_sleep_minutes: Option<f64>,
+    pub rem_sleep_minutes: Option<f64>,
+    pub awake_minutes: Option<f64>,
+    /// Time spent napping during the day, in minutes.
+    pub nap_minutes: Option<f64>,
     /// Number of times awake during the night.
     pub awake_count: Option<u32>,
     /// Garmin sleep score, 0–100.
@@ -370,12 +485,15 @@ impl DailySleep {
             // itself return `None` (here: if the timestamp is out of range).
             sleep_start_local: self.sleep_start_timestamp_local.and_then(local_time),
             sleep_end_local: self.sleep_end_timestamp_local.and_then(local_time),
-            total_sleep_seconds: self.sleep_time_seconds,
-            deep_sleep_seconds: self.deep_sleep_seconds,
-            light_sleep_seconds: self.light_sleep_seconds,
-            rem_sleep_seconds: self.rem_sleep_seconds,
-            awake_seconds: self.awake_sleep_seconds,
-            nap_seconds: self.nap_time_seconds,
+            // Garmin gives seconds; `minutes` converts (see below). Passing
+            // the function name `minutes` to `.map` is shorthand for
+            // `.map(|s| minutes(s))`.
+            total_sleep_minutes: self.sleep_time_seconds.map(minutes),
+            deep_sleep_minutes: self.deep_sleep_seconds.map(minutes),
+            light_sleep_minutes: self.light_sleep_seconds.map(minutes),
+            rem_sleep_minutes: self.rem_sleep_seconds.map(minutes),
+            awake_minutes: self.awake_sleep_seconds.map(minutes),
+            nap_minutes: self.nap_time_seconds.map(minutes),
             awake_count: self.awake_count,
             sleep_score: overall.value,
             sleep_score_rating: overall.qualifier_key,
@@ -392,6 +510,12 @@ impl DailySleep {
             insight: self.sleep_score_insight,
         })
     }
+}
+
+/// Converts whole seconds to minutes, rounded to 0.1 (6 s).
+fn minutes(seconds: u32) -> f64 {
+    // `f64::from` converts the integer to a float without any loss.
+    round(f64::from(seconds) / 60.0, 1)
 }
 
 /// Formats one of Garmin's "local" timestamps as "YYYY-MM-DD HH:MM:SS".
@@ -427,23 +551,34 @@ mod tests {
         "splitSummaries": []
     }"#;
 
-    #[test]
-    fn reads_garmin_json() {
+    /// Parses one activity from JSON and converts it to the output shape.
+    fn summary(json: &str) -> ActivitySummary {
         // `serde_json::from_str` parses text into our struct. `.unwrap()`
         // panics (fails the test) if parsing returns an error.
-        let activity: Activity = serde_json::from_str(STRENGTH_JSON).unwrap();
-        assert_eq!(activity.activity_id, 24824822921);
-        assert_eq!(activity.activity_type, "strength_training");
-        assert_eq!(activity.average_hr, Some(124.0));
-        assert_eq!(activity.total_reps, Some(285));
-        // Not in the JSON, so it falls back to `None`.
-        assert_eq!(activity.avg_power, None);
+        let activity: Activity = serde_json::from_str(json).unwrap();
+        activity.into_summary()
     }
 
     #[test]
-    fn rounds_float_noise_on_output() {
+    fn strength_training_has_no_distance_or_speed() {
+        let out = summary(STRENGTH_JSON);
+        assert_eq!(out.activity_type, "strength_training");
+        assert_eq!(out.duration_min, Some(70.65));
+        assert_eq!(out.average_hr, Some(124.0));
+        assert_eq!(out.total_reps, Some(285));
+        // Distance 0 means "no distance", so all distance/speed fields are
+        // empty. `avg_power` was missing from the JSON.
+        assert_eq!(out.distance_km, None);
+        assert_eq!(out.avg_pace_per_km, None);
+        assert_eq!(out.avg_speed_kmh, None);
+        assert_eq!(out.avg_power_w, None);
+    }
+
+    #[test]
+    fn walking_gets_km_and_pace_per_km() {
         // Raw values exactly as Garmin sends them.
-        let json = r#"{
+        let out = summary(
+            r#"{
             "activityId": 1,
             "activityType": {"typeKey": "walking"},
             "duration": 3741.52587890625,
@@ -452,29 +587,71 @@ mod tests {
             "aerobicTrainingEffect": 2.4000000953674316,
             "activityTrainingLoad": 62.689056396484375,
             "averageHR": 83.0
-        }"#;
-        let activity: Activity = serde_json::from_str(json).unwrap();
-        let out = serde_json::to_value(&activity).unwrap();
-        assert_eq!(out["duration"], 3741.5);
-        assert_eq!(out["distance"], 4380.18);
-        assert_eq!(out["average_speed"], 1.171);
-        assert_eq!(out["aerobic_training_effect"], 2.4);
-        assert_eq!(out["activity_training_load"], 62.7);
-        // Fields without rounding are written unchanged.
-        assert_eq!(out["average_hr"], 83.0);
-        // Missing values are still skipped, not written as rounded `null`s.
-        assert!(out.get("moving_duration").is_none());
+        }"#,
+        );
+        assert_eq!(out.duration_min, Some(62.36));
+        assert_eq!(out.distance_km, Some(4.38));
+        // 1000 m / 1.171 m/s = 853.97 s = 14 min 14 s.
+        assert_eq!(out.avg_pace_per_km.as_deref(), Some("14:14"));
+        assert_eq!(out.avg_speed_kmh, None);
+        // Float noise removed.
+        assert_eq!(out.aerobic_training_effect, Some(2.4));
+        assert_eq!(out.activity_training_load, Some(62.7));
+        // Not rounded: already clean.
+        assert_eq!(out.average_hr, Some(83.0));
     }
 
     #[test]
-    fn writes_snake_case_and_skips_missing_fields() {
-        let activity: Activity = serde_json::from_str(STRENGTH_JSON).unwrap();
-        let out = serde_json::to_value(&activity).unwrap();
+    fn treadmill_running_counts_as_running() {
+        // 1000 / 2.778 = 360.0 s = exactly 6:00 per km.
+        let out = summary(
+            r#"{"activityId": 1, "activityType": {"typeKey": "treadmill_running"},
+                "distance": 5000.0, "averageSpeed": 2.778}"#,
+        );
+        assert_eq!(out.avg_pace_per_km.as_deref(), Some("6:00"));
+    }
+
+    #[test]
+    fn swimming_gets_meters_and_pace_per_100m() {
+        // 100 / 0.8 = 125 s = 2:05 per 100 m.
+        let out = summary(
+            r#"{"activityId": 1, "activityType": {"typeKey": "lap_swimming"},
+                "distance": 1500.0, "averageSpeed": 0.8}"#,
+        );
+        assert_eq!(out.distance_m, Some(1500.0));
+        assert_eq!(out.distance_km, None);
+        assert_eq!(out.avg_pace_per_100m.as_deref(), Some("2:05"));
+        assert_eq!(out.avg_pace_per_km, None);
+    }
+
+    #[test]
+    fn cycling_gets_km_per_hour() {
+        // 7.03 m/s * 3.6 = 25.308 km/h.
+        let out = summary(
+            r#"{"activityId": 1, "activityType": {"typeKey": "indoor_cycling"},
+                "distance": 20000.0, "averageSpeed": 7.03, "movingDuration": 0.0}"#,
+        );
+        assert_eq!(out.distance_km, Some(20.0));
+        // Indoor: Garmin's moving time of 0 means "not tracked".
+        assert_eq!(out.moving_duration_min, None);
+        assert_eq!(out.avg_speed_kmh, Some(25.3));
+        assert_eq!(out.avg_pace_per_km, None);
+    }
+
+    #[test]
+    fn pace_rounds_seconds_without_showing_60() {
+        assert_eq!(format_pace(359.6), "6:00");
+        assert_eq!(format_pace(365.0), "6:05");
+    }
+
+    #[test]
+    fn output_skips_missing_fields() {
+        let out = serde_json::to_value(summary(STRENGTH_JSON)).unwrap();
         assert_eq!(out["activity_type"], "strength_training");
-        assert_eq!(out["average_hr"], 124.0);
         // `None` fields are left out, and Garmin fields we don't model
         // (like `ownerFullName`) never appear.
-        assert!(out.get("avg_power").is_none());
+        assert!(out.get("avg_power_w").is_none());
+        assert!(out.get("distance_km").is_none());
         assert!(out.get("ownerFullName").is_none());
     }
 
@@ -482,6 +659,7 @@ mod tests {
     const SLEEP_JSON: &str = r#"{
         "calendarDate": "2026-10-23",
         "sleepTimeSeconds": 29040,
+        "napTimeSeconds": 1819,
         "sleepStartTimestampLocal": 1792717086000,
         "sleepEndTimestampLocal": 1792746786000,
         "deepSleepSeconds": 4500,
@@ -505,6 +683,10 @@ mod tests {
         // Missing in the JSON, so `None`.
         assert_eq!(sleep.rem_percent, None);
         assert_eq!(sleep.sleep_need_minutes, Some(490));
+        // 29040 s = 484 min, 4500 s = 75 min, 1819 s = 30.3 min.
+        assert_eq!(sleep.total_sleep_minutes, Some(484.0));
+        assert_eq!(sleep.deep_sleep_minutes, Some(75.0));
+        assert_eq!(sleep.nap_minutes, Some(30.3));
         assert_eq!(
             sleep.sleep_start_local.as_deref(),
             Some("2026-10-23 00:58:06")
