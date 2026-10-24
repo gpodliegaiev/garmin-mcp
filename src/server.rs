@@ -512,6 +512,22 @@ impl GarminServer {
         serde_json::to_string(&days).map_err(|e| e.to_string())
     }
 
+    /// Returns the user's heart rate zones as compact JSON.
+    ///
+    /// This tool takes no arguments, so the method has no `Parameters(...)`
+    /// argument; `#[tool]` then advertises an empty input schema.
+    #[tool(
+        description = "Get the user's heart rate zones from Garmin Connect, one set per sport (DEFAULT, and RUNNING/CYCLING/SWIMMING/ROWING if configured): each of the 5 zones as [low, high] bpm, the training method (HR_MAX, LACTATE_THRESHOLD, HR_RESERVE, CUSTOM), and the max, resting and lactate threshold heart rates used. Use it to read the hr_zones_min of activities in bpm."
+    )]
+    async fn get_heart_rate_zones(&self) -> Result<String, String> {
+        let zones = self
+            .garmin
+            .heart_rate_zones()
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+        serde_json::to_string(&zones).map_err(|e| e.to_string())
+    }
+
     /// Returns HRV per night for a date range as compact JSON, or a short
     /// message if no night in the range has data.
     #[tool(

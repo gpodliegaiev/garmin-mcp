@@ -10,8 +10,9 @@ An [MCP](https://modelcontextprotocol.io) server, written in Rust, that gives AI
 | `get_activity` | One activity by id. Most metrics are already in `list_activities`; this adds the time zone, min and recovery heart rate, average moving pace, stamina, and heart rate per split type. | `activity_id` (from `list_activities`) |
 | `get_fitness_age` | Garmin Fitness Age as of a date: chronological, current, previous and achievable fitness age, and each input (vigorous days and minutes per week, resting heart rate, BMI or body fat) with Garmin's target, the fitness age reachable by hitting it, and its priority. Inputs without recent data are marked stale. | `date` as `YYYY-MM-DD` (default today); returns the latest values on or before it |
 | `get_daily_summary` | All-day wellness per day: steps, floors, calories, resting and min/max heart rate, intensity minutes, stress (level and minutes per category), Body Battery with every event that charged or drained it, respiration, SpO2, hydration. For a single day, also Body Battery at wake and during sleep, 7-day resting HR, time per activity level, and the activity behind each Body Battery event. | `start_date` / `end_date` as `YYYY-MM-DD` (default the last 7 days, up to 31 days apart) |
+| `get_heart_rate_zones` | Your heart rate zones per sport: each zone as a `[low, high]` bpm range, the training method, and the max, resting and lactate threshold heart rates used. Explains the `hr_zones_min` of activities. | none |
 | `get_hrv` | Overnight heart rate variability per night: last night's average and 5-minute high, 7-day average, personal baseline (balanced range, low limit), HRV status and feedback code, in ms. For a single day, also the measured window and every 5-minute reading. | `start_date` / `end_date` as `YYYY-MM-DD` (default the last 7 nights, up to 366 days apart) |
-| `get_sleep` | One night's sleep with every metric Garmin recorded: bed and wake times, deep/light/REM/awake durations and naps, sleep score with each factor's rating and optimal range, heart rate, respiration, SpO2 and breathing disruption (when tracked), stress, sleep need with its adjustments, recommended bedtime for this and the next night, and sleep-timing alignment. | `date` as `YYYY-MM-DD` (default today) for one night, or `start_date` / `end_date` for a list of nights (default the last 7, up to 31 days apart) |
+| `get_sleep` | Sleep per night with every metric Garmin recorded: bed and wake times, deep/light/REM/awake durations and naps, sleep score with each factor's rating and optimal range, heart rate, respiration, SpO2 and breathing disruption (when tracked), stress, sleep need with its adjustments, recommended bedtime for this and the next night, and sleep-timing alignment. | `date` as `YYYY-MM-DD` (default today) for one night, or `start_date` / `end_date` for a list of nights (default the last 7, up to 31 days apart) |
 
 Each field name includes its unit (`duration_min`, `distance_km`, `elevation_gain_m`, `calories_kcal`). Heart rate is in bpm. Speed is given in the usual way for each sport:
 
@@ -132,6 +133,7 @@ src/
     ├── client.rs           authenticated HTTP requests and API calls
     ├── daily_summary.rs    daily wellness summaries (DailySummaries, UserDailySummary)
     ├── fitness_age.rs      Fitness Age and its inputs (FitnessAge)
+    ├── heart_rate_zones.rs heart rate zones per sport (HeartRateZones)
     ├── hrv.rs              heart rate variability per night (HrvRange, HrvNight)
     ├── sleep.rs            one night's sleep (DailySleep)
     └── types.rs            shared unit helpers, ActivityTypeFilter

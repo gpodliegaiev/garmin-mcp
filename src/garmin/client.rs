@@ -23,6 +23,7 @@ use super::{
     auth::TokenManager,
     daily_summary::{DailySummaries, DaySummary, UserDailySummary},
     fitness_age::{FitnessAge, FitnessAgeSummary},
+    heart_rate_zones::{HeartRateZones, ZoneSet},
     hrv::{HrvDay, HrvNight, HrvRange},
     sleep::{DailySleep, SleepSummary},
     types::ActivityTypeFilter,
@@ -199,6 +200,17 @@ impl GarminClient {
         let path = format!("/fitnessage-service/fitnessage/v2/{date}");
         let raw: FitnessAge = self.get_json(&path, &[] as &[(&str, &str)]).await?;
         Ok(raw.into_summary())
+    }
+
+    /// Gets the user's heart rate zones, one set per configured sport.
+    pub async fn heart_rate_zones(&self) -> anyhow::Result<Vec<ZoneSet>> {
+        let raw: Vec<HeartRateZones> = self
+            .get_json(
+                "/biometric-service/heartRateZones/v2",
+                &[] as &[(&str, &str)],
+            )
+            .await?;
+        Ok(raw.into_iter().map(HeartRateZones::into_summary).collect())
     }
 
     /// Gets one HRV summary per night from `start` to `end` (inclusive).

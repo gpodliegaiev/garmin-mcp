@@ -11,6 +11,7 @@
 //! - `activity_detail`: structs for one activity's full details.
 //! - `daily_summary`: structs for daily wellness summaries.
 //! - `fitness_age`: structs for Fitness Age.
+//! - `heart_rate_zones`: structs for the user's heart rate zones.
 //! - `hrv`: structs for heart rate variability.
 //! - `sleep`: structs for one night's sleep.
 
@@ -20,6 +21,7 @@ pub mod auth;
 pub mod client;
 pub mod daily_summary;
 pub mod fitness_age;
+pub mod heart_rate_zones;
 pub mod hrv;
 pub mod sleep;
 pub mod types;
