@@ -28,7 +28,7 @@ use rmcp::{
 };
 // `NaiveDate` is a calendar date without a time zone; `Local` reads this
 // computer's clock and time zone (used for "today").
-use chrono::{Local, NaiveDate};
+use chrono::{Days, Local, NaiveDate};
 // `Deserialize` lets serde build a Rust struct from JSON.
 use serde::Deserialize;
 
@@ -168,6 +168,44 @@ fn parse_date(text: &str) -> Result<NaiveDate, String> {
         .map_err(|_| format!("invalid date {text:?}: expected YYYY-MM-DD"))
 }
 
+/// Works out a date range from optional `start_date` / `end_date` tool
+/// arguments.
+///
+/// - `end` defaults to today (this computer's time zone).
+/// - `start` defaults to `default_days` days ending on `end` (7 → a week).
+/// - At most `max_days` days apart (Garmin's limit for the endpoint), and
+///   `start` must not be after `end`; Garmin answers both with a bare 400.
+fn date_range(
+    start: Option<&str>,
+    end: Option<&str>,
+    default_days: u64,
+    max_days: u64,
+) -> Result<(NaiveDate, NaiveDate), String> {
+    // `.map(parse_date)` gives `Option<Result<..>>`; `.transpose()` flips it
+    // to `Result<Option<..>>`, so `?` can return a bad-date error.
+    let end = end
+        .map(parse_date)
+        .transpose()?
+        .unwrap_or_else(|| Local::now().date_naive());
+    let start = match start {
+        Some(text) => parse_date(text)?,
+        // `checked_sub_days` returns `None` only before year -262143, so
+        // falling back to `end` never happens in practice.
+        None => end
+            .checked_sub_days(Days::new(default_days - 1))
+            .unwrap_or(end),
+    };
+    check_range("start_date", Some(start), "end_date", Some(end))?;
+    // Subtracting two dates gives a `TimeDelta`; `num_days` is whole days.
+    let days_apart = (end - start).num_days();
+    if days_apart > max_days as i64 {
+        return Err(format!(
+            "start_date and end_date are {days_apart} days apart; the maximum is {max_days}"
+        ));
+    }
+    Ok((start, end))
+}
+
 /// Converts an optional tool value to Garmin's whole units, e.g. km → m
 /// with `factor` 1000. Garmin rejects decimals, so the result is rounded.
 /// `name` is the argument name, used in the error message.
@@ -232,6 +270,19 @@ pub struct GetFitnessAgeRequest {
     /// on or before that day. Defaults to today.
     #[serde(default)]
     pub date: Option<String>,
+}
+
+/// Input arguments for the `get_hrv` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetHrvRequest {
+    /// First day, YYYY-MM-DD. Defaults to 6 days before end_date (a week).
+    #[serde(default)]
+    pub start_date: Option<String>,
+    /// Last day, YYYY-MM-DD, inclusive. Defaults to today. At most 366 days
+    /// after start_date. When start_date equals end_date, the night's
+    /// 5-minute readings are included.
+    #[serde(default)]
+    pub end_date: Option<String>,
 }
 
 /// Our MCP server. Holds everything it needs to answer requests.
@@ -387,6 +438,38 @@ impl GarminServer {
             .map_err(|e| format!("{e:#}"))?;
         serde_json::to_string(&fitness_age).map_err(|e| e.to_string())
     }
+
+    /// Returns HRV per night for a date range as compact JSON, or a short
+    /// message if no night in the range has data.
+    #[tool(
+        description = "Get the user's overnight heart rate variability (HRV) from Garmin Connect, one entry per night (date = the day the user woke up): last night's average and highest 5-minute average, 7-day average, the personal baseline (balanced range [low, high] and the upper limit of LOW), HRV status (BALANCED, UNBALANCED, LOW, POOR) and Garmin's feedback code. All values in ms. Defaults to the last 7 nights; a range can span up to 366 days. For a single day (start_date = end_date) the result also has the measured window and every 5-minute reading as [local HH:MM, ms]. Nights without data are omitted."
+    )]
+    async fn get_hrv(&self, Parameters(req): Parameters<GetHrvRequest>) -> Result<String, String> {
+        // `.as_deref()` turns `Option<String>` into `Option<&str>`
+        // (borrowing the text instead of moving it).
+        let (start, end) = date_range(req.start_date.as_deref(), req.end_date.as_deref(), 7, 366)?;
+
+        // One day: use the single-night endpoint, which has the readings.
+        // It returns one day; wrap it in a list so both cases have the same
+        // shape. `Option::map(|d| vec![d])` does that only if there is data.
+        let days = if start == end {
+            self.garmin
+                .hrv_night(start)
+                .await
+                .map(|d| d.map(|d| vec![d]))
+        } else {
+            self.garmin.hrv_range(start, end).await
+        }
+        .map_err(|e| format!("{e:#}"))?;
+
+        match days {
+            Some(days) if !days.is_empty() => {
+                serde_json::to_string(&days).map_err(|e| e.to_string())
+            }
+            // `_` matches everything else: `None` or an empty list.
+            _ => Ok(format!("No HRV data recorded from {start} to {end}.")),
+        }
+    }
 }
 
 // Implement the `ServerHandler` trait: the interface `rmcp` uses to talk to
@@ -457,6 +540,26 @@ mod tests {
                 min_elevation: Some(100),
                 max_elevation: Some(500),
             }
+        );
+    }
+
+    #[test]
+    fn date_range_defaults_and_limits() {
+        let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+        // Only the end given: a week ending on it.
+        assert_eq!(
+            date_range(None, Some("2026-10-24"), 7, 366),
+            Ok((d("2026-10-18"), d("2026-10-24")))
+        );
+        // Exactly 366 days apart is allowed, one more is not.
+        assert!(date_range(Some("2025-10-23"), Some("2026-10-24"), 7, 366).is_ok());
+        assert_eq!(
+            date_range(Some("2025-10-22"), Some("2026-10-24"), 7, 366),
+            Err("start_date and end_date are 367 days apart; the maximum is 366".into())
+        );
+        assert_eq!(
+            date_range(Some("2026-10-24"), Some("2026-10-18"), 7, 366),
+            Err("start_date (2026-10-24) is greater than end_date (2026-10-18)".into())
         );
     }
 

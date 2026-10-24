@@ -22,6 +22,7 @@ use super::{
     activity_detail::{ActivityDetail, ActivityDetailSummary},
     auth::TokenManager,
     fitness_age::{FitnessAge, FitnessAgeSummary},
+    hrv::{HrvDay, HrvNight, HrvRange},
     sleep::{DailySleep, SleepSummary},
     types::ActivityTypeFilter,
 };
@@ -172,8 +173,51 @@ impl GarminClient {
         Ok(raw.into_summary())
     }
 
+    /// Gets one HRV summary per night from `start` to `end` (inclusive).
+    /// Garmin allows at most 366 days between the dates. `Ok(None)` means
+    /// no night in the range has data.
+    pub async fn hrv_range(
+        &self,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> anyhow::Result<Option<Vec<HrvDay>>> {
+        let path = format!("/hrv-service/hrv/daily/{start}/{end}");
+        let raw: Option<HrvRange> = self
+            .get_optional_json(&path, &[] as &[(&str, &str)])
+            .await?;
+        // `Option::map` converts the response only if there is one.
+        Ok(raw.map(HrvRange::into_summary))
+    }
+
+    /// Gets one night's HRV with its 5-minute readings. `Ok(None)` means no
+    /// data for that night.
+    pub async fn hrv_night(&self, date: NaiveDate) -> anyhow::Result<Option<HrvDay>> {
+        let path = format!("/hrv-service/hrv/{date}");
+        let raw: Option<HrvNight> = self
+            .get_optional_json(&path, &[] as &[(&str, &str)])
+            .await?;
+        // `and_then` (not `map`) because `into_summary` itself returns an
+        // `Option`; this avoids an `Option<Option<_>>`.
+        Ok(raw.and_then(HrvNight::into_summary))
+    }
+
+    /// Like [`Self::get_optional_json`], for endpoints that always return
+    /// data: an empty (204) response is an error here.
+    async fn get_json<T: DeserializeOwned, Q: Serialize + ?Sized>(
+        &self,
+        path: &str,
+        query: &Q,
+    ) -> anyhow::Result<T> {
+        // `.with_context(...)` (from `anyhow::Context`) turns an `Option`
+        // into a `Result`: `None` becomes an error with this message.
+        self.get_optional_json(path, query)
+            .await?
+            .with_context(|| format!("GET {path}: unexpected empty response"))
+    }
+
     /// Sends an authenticated `GET` request and parses the JSON response
-    /// into `T`.
+    /// into `T`, or returns `None` if Garmin answers 204 No Content (some
+    /// endpoints, like HRV, use it for "no data").
     ///
     /// `<T: DeserializeOwned>` makes this function *generic*: the caller picks
     /// the result type (e.g. `Vec<Activity>`), and the compiler checks that
@@ -184,11 +228,11 @@ impl GarminClient {
     /// what the second generic parameter `Q: Serialize` expresses. `?Sized`
     /// relaxes a default rule so `Q` may be a slice like `[(&str, u32)]`,
     /// whose size isn't known at compile time (we only use it via `&Q`).
-    async fn get_json<T: DeserializeOwned, Q: Serialize + ?Sized>(
+    async fn get_optional_json<T: DeserializeOwned, Q: Serialize + ?Sized>(
         &self,
         path: &str,
         query: &Q,
-    ) -> anyhow::Result<T> {
+    ) -> anyhow::Result<Option<T>> {
         let token = self.tokens.get_token().await?;
         let mut response = self.send_get(path, query, &token).await?;
 
@@ -212,13 +256,19 @@ impl GarminClient {
             anyhow::bail!("GET {path} failed: HTTP {status}: {snippet}");
         }
 
+        // 204 has no body at all, so there is nothing to parse.
+        if status == StatusCode::NO_CONTENT {
+            return Ok(None);
+        }
+
         // Parse the body as JSON into `T`. `::<T>` (the "turbofish") tells
         // `.json` which type to produce. This fails if the JSON doesn't match
         // `T`, e.g. a field has an unexpected type.
-        response
+        let value = response
             .json::<T>()
             .await
-            .with_context(|| format!("GET {path}: unexpected response format"))
+            .with_context(|| format!("GET {path}: unexpected response format"))?;
+        Ok(Some(value))
     }
 
     /// Sends one `GET` request with the given bearer token.

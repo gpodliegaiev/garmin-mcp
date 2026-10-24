@@ -7,7 +7,7 @@ Full request and response schemas are in `garmin-openapi.json` under `components
 
 ## Endpoints
 
-4 of 26 endpoints are implemented. Status comes from scanning `src/`; refresh it with `python3 docs/update_garmin_spec.py --offline`.
+6 of 26 endpoints are implemented. Status comes from scanning `src/`; refresh it with `python3 docs/update_garmin_spec.py --offline`.
 
 | Endpoint | MCP tool | `GarminClient` method |
 |---|---|---|
@@ -18,8 +18,8 @@ Full request and response schemas are in `garmin-openapi.json` under `components
 | [`GET /download-service/files/activity/{activityId}`](#get-download-servicefilesactivityactivityid) | not implemented | |
 | ✅ [`GET /fitnessage-service/fitnessage/v2/{calendarDate}`](#get-fitnessage-servicefitnessagev2calendardate) | `get_fitness_age` | `fitness_age` |
 | [`GET /goal-service/goal/user/effective/weightgoal/{startDate}/{endDate}`](#get-goal-servicegoalusereffectiveweightgoalstartdateenddate) | not implemented | |
-| [`GET /hrv-service/hrv/{calendarDate}`](#get-hrv-servicehrvcalendardate) | not implemented | |
-| [`GET /hrv-service/hrv/daily/{fromDate}/{toDate}`](#get-hrv-servicehrvdailyfromdatetodate) | not implemented | |
+| ✅ [`GET /hrv-service/hrv/{calendarDate}`](#get-hrv-servicehrvcalendardate) | `get_hrv` | `hrv_night` |
+| ✅ [`GET /hrv-service/hrv/daily/{fromDate}/{toDate}`](#get-hrv-servicehrvdailyfromdatetodate) | `get_hrv` | `hrv_range` |
 | [`GET /nutrition-service/food/logs/{date}`](#get-nutrition-servicefoodlogsdate) | not implemented | |
 | [`GET /periodichealth-service/menstrualcycle/summary/{calendarDate}`](#get-periodichealth-servicemenstrualcyclesummarycalendardate) | not implemented | |
 | [`GET /periodichealth-service/menstrualcycle/dayview/{calendarDate}`](#get-periodichealth-servicemenstrualcycledayviewcalendardate) | not implemented | |
@@ -175,7 +175,7 @@ Get effective weight goals. Returns the authenticated user's effective weight go
 
 ## GET /hrv-service/hrv/{calendarDate}
 
-**Not implemented.**
+**Implemented:** MCP tool `get_hrv`, via `GarminClient::hrv_night` (`src/garmin/client.rs`).
 
 Get HRV data for a specific date
 
@@ -188,7 +188,7 @@ Get HRV data for a specific date
 
 ## GET /hrv-service/hrv/daily/{fromDate}/{toDate}
 
-**Not implemented.**
+**Implemented:** MCP tool `get_hrv`, via `GarminClient::hrv_range` (`src/garmin/client.rs`).
 
 Get HRV daily summaries for a date range
 
