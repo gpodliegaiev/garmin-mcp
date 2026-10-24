@@ -63,7 +63,8 @@ pub struct ListActivitiesRequest {
     pub limit: u32,
     /// Only return activities of this sport group. Omit for all activities.
     /// Groups include their subtypes: `running` includes treadmill runs, and
-    /// strength training is under `fitness_equipment`.
+    /// strength training is under `fitness_equipment`, floor climbing under
+    /// `other`.
     // Field name as the client sends it: `activity_type`. Any value not in
     // the `ActivityTypeFilter` enum makes the call fail with a clear message.
     #[serde(default)]
@@ -203,6 +204,15 @@ fn check_range<T: PartialOrd + std::fmt::Debug>(
     Ok(())
 }
 
+/// Input arguments for the `get_activity` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetActivityRequest {
+    /// Id of the activity, as returned in `activity_id` by `list_activities`.
+    // No `#[serde(default)]`: the argument is required, and a call without
+    // it is rejected before the tool runs. `u64` fits Garmin's 11-digit ids.
+    pub activity_id: u64,
+}
+
 /// Input arguments for the `get_sleep` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetSleepRequest {
@@ -275,7 +285,7 @@ impl GarminServer {
     /// result; `Err(message)` is sent as a tool error (`isError: true`), so
     /// the AI sees what went wrong instead of the whole call failing.
     #[tool(
-        description = "List the user's Garmin Connect activities (runs, walks, strength sessions, etc.), newest first. Optional filters (all inclusive, combinable): sport group (activity_type), local start date range (start_date, end_date as YYYY-MM-DD), distance in km, duration in minutes, elevation gain in m. Only `limit` activities are returned (default 5, max 100), so raise it to get everything in a range. Returns a JSON array with a summary of each activity. Each field name includes its unit (e.g. duration_min, distance_km, calories_kcal; heart rate in bpm). Speed is given the usual way for the sport: avg_pace_per_km (\"m:ss\") for running, walking and hiking; avg_pace_per_100m and distance_m for swimming; avg_speed_kmh otherwise. Fields that don't apply to an activity are omitted."
+        description = "List the user's Garmin Connect activities (runs, walks, strength sessions, etc.), newest first, with every metric Garmin recorded, for full activity evaluation. Optional filters (all inclusive, combinable): sport group (activity_type), local start date range (start_date, end_date as YYYY-MM-DD), distance in km, duration in minutes, elevation gain in m. Only `limit` activities are returned (default 5, max 100), so raise it to get everything in a range. Returns a JSON array, one object per activity. Each field name includes its unit (e.g. duration_min, distance_km, calories_kcal, stride_length_cm; heart rate in bpm). Speed is given the usual way for the sport: *_pace_per_km (\"m:ss\") for running, walking and hiking; *_pace_per_100m and distance_m for swimming; *_speed_kmh otherwise. Besides basics (time, distance, pace, elevation, heart rate, calories, training effect and load, body battery, intensity minutes) an activity can include: hr_zones_min and power_zones_min (minutes per zone; time below zone 1 is not counted), power (avg/max/normalized, power_curve_w best power per time window, FTP, TSS, intensity factor, pedal balance and force), cadence, running dynamics (stride length, ground contact time and balance, vertical oscillation and ratio, step speed loss), fastest_splits (best time per standard distance), grade-adjusted pace, lactate threshold, VO2 max, respiration, stress, sweat loss, temperature, swim, paddling, dive and mountain-bike metrics, strength exercises (sets, reps, max weight, volume per exercise), and splits (totals per split type, e.g. run/walk/stand or ski runs vs. lifts). Fields that don't apply or weren't recorded are omitted."
     )]
     async fn list_activities(
         &self,
@@ -299,10 +309,26 @@ impl GarminServer {
         serde_json::to_string(&activities).map_err(|e| e.to_string())
     }
 
+    /// Returns the full details of one activity as compact JSON.
+    #[tool(
+        description = "Get details of one Garmin Connect activity by activity_id (from list_activities). Most metrics are already in list_activities; this adds the activity's time zone, min and recovery heart rate, average moving pace/speed, stamina at start and end, and heart rate per split type. Each field name includes its unit; fields that don't apply are omitted."
+    )]
+    async fn get_activity(
+        &self,
+        Parameters(req): Parameters<GetActivityRequest>,
+    ) -> Result<String, String> {
+        let detail = self
+            .garmin
+            .activity_detail(req.activity_id)
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+        serde_json::to_string(&detail).map_err(|e| e.to_string())
+    }
+
     /// Returns one night's sleep summary as compact JSON, or a short message
     /// if Garmin has no sleep recorded for that day.
     #[tool(
-        description = "Get the user's sleep for one night from Garmin Connect: bed and wake times (local), total and per-stage sleep (deep, light, REM, awake), sleep score and rating, stage percentages, average heart rate, respiration and stress during sleep, and recommended sleep. Garmin files a night under the day the user woke up, so last night's sleep is today's date. All durations are in minutes."
+        description = "Get the user's sleep for one night from Garmin Connect, with every metric Garmin recorded: bed and wake times (local), total and per-stage sleep (deep, light, REM, awake, unmeasurable) and naps, sleep score and rating, each score factor's rating with Garmin's optimal range (duration, deep/light/REM percent, stress, awake count, restlessness), heart rate, respiration (avg/min/max), SpO2 and breathing disruption when tracked, sleep stress, feedback and insight codes, sleep need (baseline, adjustments for training, HRV, naps, sleep history) and recommended bedtime for this and the next night, and sleep-timing alignment (optimal window and midpoints, local HH:MM). Garmin files a night under the day the user woke up, so last night's sleep is today's date. Durations are in minutes; ranges are [low, high]. Fields that weren't recorded are omitted."
     )]
     async fn get_sleep(
         &self,

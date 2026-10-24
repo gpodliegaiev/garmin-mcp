@@ -6,10 +6,16 @@
 //!
 //! - `auth`: obtains and caches the short-lived bearer token.
 //! - `client`: sends authenticated requests and exposes API calls.
-//! - `types`: Rust structs for the JSON that Garmin returns.
+//! - `types`: shared types and unit helpers.
+//! - `activity`: structs for the activity list.
+//! - `activity_detail`: structs for one activity's full details.
+//! - `sleep`: structs for one night's sleep.
 
+pub mod activity;
+pub mod activity_detail;
 pub mod auth;
 pub mod client;
+pub mod sleep;
 pub mod types;
 
 // Re-export so other code can write `garmin::GarminClient` instead of

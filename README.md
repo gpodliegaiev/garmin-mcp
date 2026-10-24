@@ -6,8 +6,9 @@ An [MCP](https://modelcontextprotocol.io) server, written in Rust, that gives AI
 
 | Tool | What it returns | Arguments |
 |---|---|---|
-| `list_activities` | Your most recent activities, newest first: name, sport, start time, duration, distance, heart rate, calories, training effect, and for strength training, sets and reps. | `start` (default 0), `limit` (default 5, max 100), and optional filters: `activity_type` (see below), `start_date` / `end_date` (`YYYY-MM-DD`), `min_distance_km` / `max_distance_km`, `min_duration_min` / `max_duration_min`, `min_elevation_gain_m` / `max_elevation_gain_m` |
-| `get_sleep` | One night's sleep: bed and wake times, deep/light/REM/awake durations, sleep score, average heart rate, respiration and stress, and recommended sleep. | `date` as `YYYY-MM-DD` (default today) |
+| `list_activities` | Your most recent activities, newest first, with every metric Garmin recorded: time, distance, pace, elevation, heart rate and time in each HR zone, power (zones, power curve, normalized power, FTP, TSS), cadence, running dynamics, fastest splits, training effect and load, VO2 max, body battery, respiration, stress, calories, sweat loss, swim/paddle/dive/MTB metrics, strength exercises (sets, reps, weight, volume per exercise), and split totals. | `start` (default 0), `limit` (default 5, max 100), and optional filters: `activity_type` (see below), `start_date` / `end_date` (`YYYY-MM-DD`), `min_distance_km` / `max_distance_km`, `min_duration_min` / `max_duration_min`, `min_elevation_gain_m` / `max_elevation_gain_m` |
+| `get_activity` | One activity by id. Most metrics are already in `list_activities`; this adds the time zone, min and recovery heart rate, average moving pace, stamina, and heart rate per split type. | `activity_id` (from `list_activities`) |
+| `get_sleep` | One night's sleep with every metric Garmin recorded: bed and wake times, deep/light/REM/awake durations and naps, sleep score with each factor's rating and optimal range, heart rate, respiration, SpO2 and breathing disruption (when tracked), stress, sleep need with its adjustments, recommended bedtime for this and the next night, and sleep-timing alignment. | `date` as `YYYY-MM-DD` (default today) |
 
 Each field name includes its unit (`duration_min`, `distance_km`, `elevation_gain_m`, `calories_kcal`). Heart rate is in bpm. Speed is given in the usual way for each sport:
 
@@ -17,7 +18,7 @@ Each field name includes its unit (`duration_min`, `distance_km`, `elevation_gai
 | Swimming | `distance_m` | `avg_pace_per_100m`, e.g. `"2:05"` |
 | Cycling and other sports | `distance_km` | `avg_speed_kmh` |
 
-Fields that don't apply to an activity are left out. Examples: distance for strength training, moving time for indoor activities. Sleep durations are in minutes.
+Every tool returns all useful fields Garmin sends. Fields that don't apply or weren't recorded are left out. Examples: distance for strength training, moving time for indoor activities, power zones without a power meter. Sleep durations are in minutes.
 
 **Filters** can be combined, and all ranges are inclusive. Dates refer to each activity's local start date. Distance is in km for every sport, including swimming (1.5 means 1500 m). Duration is timer time, excluding pauses, the same as `duration_min` in the result (not `moving_duration_min`). Only `limit` activities come back, so raise it to get everything in a range.
 
@@ -26,6 +27,7 @@ Fields that don't apply to an activity are left out. Examples: distance for stre
 Garmin filters by sport group, not by exact type:
 - `running` includes treadmill runs.
 - Strength training, stair climbing and elliptical are under `fitness_equipment`.
+- Floor climbing and breathwork are under `other`.
 
 **Sleep dates:** Garmin files a night under the day you woke up, so last night's sleep is today's date.
 
@@ -119,16 +121,19 @@ cargo fmt                   # format
 src/
 ├── main.rs           entry point: loads config, starts the server on stdio
 ├── config.rs         reads GARMIN_API_KEY / GARMIN_BASE_URL
-├── server.rs         MCP tools (list_activities, get_sleep)
+├── server.rs         MCP tools (list_activities, get_activity, get_sleep)
 └── garmin/
-    ├── auth.rs       bearer token fetch and cache
-    ├── client.rs     authenticated HTTP requests and API calls
-    └── types.rs      response structs (Activity, SleepSummary, ActivityTypeFilter)
+    ├── activity.rs         activity list entries (Activity)
+    ├── activity_detail.rs  one activity's full details (ActivityDetail)
+    ├── auth.rs             bearer token fetch and cache
+    ├── client.rs           authenticated HTTP requests and API calls
+    ├── sleep.rs            one night's sleep (DailySleep)
+    └── types.rs            shared unit helpers, ActivityTypeFilter
 ```
 
 To add a tool:
 1. Add the API call to `garmin/client.rs`.
-2. Add its response types to `garmin/types.rs`.
+2. Add its response types in a new file under `garmin/`. Output every useful field Garmin returns (see CLAUDE.md, "Response fields").
 3. Add a `#[tool]` method in `server.rs`.
 
 The code is commented heavily, as a Rust learning resource.

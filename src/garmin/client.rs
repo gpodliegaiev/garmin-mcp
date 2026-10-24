@@ -18,8 +18,11 @@ use serde::de::DeserializeOwned;
 // `super::` means "the parent module" (`garmin`), so this is
 // `crate::garmin::auth::TokenManager`.
 use super::{
+    activity::{Activity, ActivitySummary},
+    activity_detail::{ActivityDetail, ActivityDetailSummary},
     auth::TokenManager,
-    types::{Activity, ActivitySummary, ActivityTypeFilter, DailySleep, SleepSummary},
+    sleep::{DailySleep, SleepSummary},
+    types::ActivityTypeFilter,
 };
 use crate::config::Config;
 
@@ -129,6 +132,17 @@ impl GarminClient {
         // `.map(...)` converts each one; `.collect()` gathers the results
         // into a new `Vec` (the type comes from the function's return type).
         Ok(activities.into_iter().map(Activity::into_summary).collect())
+    }
+
+    /// Gets the full details of one activity by its id (as returned by
+    /// `list_activities`). An unknown id fails with Garmin's HTTP 404.
+    pub async fn activity_detail(&self, activity_id: u64) -> anyhow::Result<ActivityDetailSummary> {
+        // The id is part of the path, not a query parameter, so the path is
+        // built with `format!` and the query is an empty slice. `&[] as
+        // &[(&str, &str)]` tells the compiler what type the empty slice has.
+        let path = format!("/activity-service/activity/{activity_id}");
+        let raw: ActivityDetail = self.get_json(&path, &[] as &[(&str, &str)]).await?;
+        Ok(raw.into_summary())
     }
 
     /// Gets the sleep summary for one night.
