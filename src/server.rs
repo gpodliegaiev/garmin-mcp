@@ -261,6 +261,14 @@ pub struct GetSleepRequest {
     // JSON becomes `None`. (`#[serde(default)]` lets it be left out entirely.)
     #[serde(default)]
     pub date: Option<String>,
+    /// First night of a range, YYYY-MM-DD (use instead of `date`). Defaults
+    /// to 6 days before end_date (a week).
+    #[serde(default)]
+    pub start_date: Option<String>,
+    /// Last night of a range, YYYY-MM-DD, inclusive (use instead of `date`).
+    /// Defaults to today. At most 31 days after start_date.
+    #[serde(default)]
+    pub end_date: Option<String>,
 }
 
 /// Input arguments for the `get_fitness_age` tool.
@@ -403,13 +411,31 @@ impl GarminServer {
     /// Returns one night's sleep summary as compact JSON, or a short message
     /// if Garmin has no sleep recorded for that day.
     #[tool(
-        description = "Get the user's sleep for one night from Garmin Connect, with every metric Garmin recorded: bed and wake times (local), total and per-stage sleep (deep, light, REM, awake, unmeasurable) and naps, sleep score and rating, each score factor's rating with Garmin's optimal range (duration, deep/light/REM percent, stress, awake count, restlessness), heart rate, respiration (avg/min/max), SpO2 and breathing disruption when tracked, sleep stress, feedback and insight codes, sleep need (baseline, adjustments for training, HRV, naps, sleep history) and recommended bedtime for this and the next night, and sleep-timing alignment (optimal window and midpoints, local HH:MM). Garmin files a night under the day the user woke up, so last night's sleep is today's date. Durations are in minutes; ranges are [low, high]. Fields that weren't recorded are omitted."
+        description = "Get the user's sleep for one night from Garmin Connect, with every metric Garmin recorded: bed and wake times (local), total and per-stage sleep (deep, light, REM, awake, unmeasurable) and naps, sleep score and rating, each score factor's rating with Garmin's optimal range (duration, deep/light/REM percent, stress, awake count, restlessness), heart rate, respiration (avg/min/max), SpO2 and breathing disruption when tracked, sleep stress, feedback and insight codes, sleep need (baseline, adjustments for training, HRV, naps, sleep history) and recommended bedtime for this and the next night, and sleep-timing alignment (optimal window and midpoints, local HH:MM). Garmin files a night under the day the user woke up, so last night's sleep is today's date. Pass `date` (default today) for one night, returned as one object; or start_date and/or end_date for a list of nights (default the last 7, at most 31 days apart; nights without data are left out). Durations are in minutes; ranges are [low, high]. Fields that weren't recorded are omitted."
     )]
     async fn get_sleep(
         &self,
         Parameters(req): Parameters<GetSleepRequest>,
     ) -> Result<String, String> {
-        // Work out which day to ask for.
+        // A range was asked for: return a list of nights.
+        if req.start_date.is_some() || req.end_date.is_some() {
+            if req.date.is_some() {
+                return Err("pass either date or start_date/end_date, not both".into());
+            }
+            let (start, end) =
+                date_range(req.start_date.as_deref(), req.end_date.as_deref(), 7, 31)?;
+            let nights = self
+                .garmin
+                .sleep_range(start, end)
+                .await
+                .map_err(|e| format!("{e:#}"))?;
+            if nights.is_empty() {
+                return Ok(format!("No sleep data recorded from {start} to {end}."));
+            }
+            return serde_json::to_string(&nights).map_err(|e| e.to_string());
+        }
+
+        // Otherwise one night. Work out which day to ask for.
         // `match` compares a value against patterns and runs the first arm
         // that fits. `Some(text)` binds the string inside to `text`.
         let date = match req.date {

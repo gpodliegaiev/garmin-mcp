@@ -85,6 +85,9 @@ const ACTIVITIES_PATH: &str = "/activitylist-service/activities/search/activitie
 /// Path of the daily sleep endpoint. Requires a `date=YYYY-MM-DD` parameter.
 const DAILY_SLEEP_PATH: &str = "/sleep-service/sleep/dailySleep";
 
+/// Path of the sleep range endpoint. Requires `startDate` and `endDate`.
+const SLEEP_RANGE_PATH: &str = "/sleep-service/sleep/dailySleepSummariesByDate";
+
 /// Authenticated access to the Garmin API.
 pub struct GarminClient {
     /// Connection pool used for every request.
@@ -162,6 +165,30 @@ impl GarminClient {
             .await?;
         // Convert Garmin's nested format into our flat summary (or `None`).
         Ok(raw.into_summary())
+    }
+
+    /// Gets the sleep summary of every night from `start` to `end`
+    /// (inclusive), oldest first. Garmin allows at most 31 days between the
+    /// dates. Nights without data are left out, so the list may be empty.
+    pub async fn sleep_range(
+        &self,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> anyhow::Result<Vec<SleepSummary>> {
+        let (start, end) = (start.to_string(), end.to_string());
+        // Each entry has the same shape as a `dailySleep` response.
+        let raw: Vec<DailySleep> = self
+            .get_json(
+                SLEEP_RANGE_PATH,
+                &[("startDate", start.as_str()), ("endDate", end.as_str())],
+            )
+            .await?;
+        // Garmin includes some all-`null` entries for nights without data;
+        // `into_summary` returns `None` for those and `filter_map` drops them.
+        Ok(raw
+            .into_iter()
+            .filter_map(DailySleep::into_summary)
+            .collect())
     }
 
     /// Gets the latest Fitness Age as of `date` (a later date than the last

@@ -7,7 +7,7 @@ Full request and response schemas are in `garmin-openapi.json` under `components
 
 ## Endpoints
 
-8 of 26 endpoints are implemented. Status comes from scanning `src/`; refresh it with `python3 docs/update_garmin_spec.py --offline`.
+9 of 26 endpoints are implemented. Status comes from scanning `src/`; refresh it with `python3 docs/update_garmin_spec.py --offline`.
 
 | Endpoint | MCP tool | `GarminClient` method |
 |---|---|---|
@@ -24,7 +24,7 @@ Full request and response schemas are in `garmin-openapi.json` under `components
 | [`GET /periodichealth-service/menstrualcycle/summary/{calendarDate}`](#get-periodichealth-servicemenstrualcyclesummarycalendardate) | not implemented | |
 | [`GET /periodichealth-service/menstrualcycle/dayview/{calendarDate}`](#get-periodichealth-servicemenstrualcycledayviewcalendardate) | not implemented | |
 | ✅ [`GET /sleep-service/sleep/dailySleep`](#get-sleep-servicesleepdailysleep) | `get_sleep` | `daily_sleep` |
-| [`GET /sleep-service/sleep/dailySleepSummariesByDate`](#get-sleep-servicesleepdailysleepsummariesbydate) | not implemented | |
+| ✅ [`GET /sleep-service/sleep/dailySleepSummariesByDate`](#get-sleep-servicesleepdailysleepsummariesbydate) | `get_sleep` | `sleep_range` |
 | [`GET /userprofile-service/userprofile/settings`](#get-userprofile-serviceuserprofilesettings) | not implemented | |
 | [`GET /usersummary-service/stats/hydration/daily/{startDate}/{endDate}`](#get-usersummary-servicestatshydrationdailystartdateenddate) | not implemented | |
 | [`GET /usersummary-service/stats/steps/daily/{startDate}/{endDate}`](#get-usersummary-servicestatsstepsdailystartdateenddate) | not implemented | |
@@ -266,7 +266,7 @@ Retrieves daily sleep data for a calendar date
 
 ## GET /sleep-service/sleep/dailySleepSummariesByDate
 
-**Not implemented.**
+**Implemented:** MCP tool `get_sleep`, via `GarminClient::sleep_range` (`src/garmin/client.rs`).
 
 Retrieves daily sleep summaries data for a date range, up to a maximum of 31 days.
 
