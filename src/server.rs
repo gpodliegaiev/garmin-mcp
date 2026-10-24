@@ -225,6 +225,15 @@ pub struct GetSleepRequest {
     pub date: Option<String>,
 }
 
+/// Input arguments for the `get_fitness_age` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetFitnessAgeRequest {
+    /// Day to get Fitness Age for, as YYYY-MM-DD. Returns the latest values
+    /// on or before that day. Defaults to today.
+    #[serde(default)]
+    pub date: Option<String>,
+}
+
 /// Our MCP server. Holds everything it needs to answer requests.
 ///
 /// - `Clone` lets the value be duplicated; `rmcp` needs this because it may
@@ -356,6 +365,27 @@ impl GarminServer {
             Some(summary) => serde_json::to_string(&summary).map_err(|e| e.to_string()),
             None => Ok(format!("No sleep data recorded for {date}.")),
         }
+    }
+
+    /// Returns the latest Fitness Age as of a day, as compact JSON.
+    #[tool(
+        description = "Get the user's Garmin Fitness Age: the latest values on or before a date (last_updated says which day), with chronological age, fitness age, previous fitness age (trend) and achievable fitness age (years, 1 decimal). Also each input to it: vigorous days and vigorous minutes per week (with the number of weeks averaged), resting heart rate, and BMI or body fat percent (with the last measurement date). When Garmin has a suggestion, an input also has target_value, improvement, potential_fitness_age (fitness age after reaching the target) and priority (1 = biggest gain). An input without recent data is marked stale with the missing inputs; if there is no fitness age at all, only chronological age and stale inputs are returned."
+    )]
+    async fn get_fitness_age(
+        &self,
+        Parameters(req): Parameters<GetFitnessAgeRequest>,
+    ) -> Result<String, String> {
+        // Same date handling as `get_sleep`: parse the argument, or use today.
+        let date = match req.date {
+            Some(text) => parse_date(&text)?,
+            None => Local::now().date_naive(),
+        };
+        let fitness_age = self
+            .garmin
+            .fitness_age(date)
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+        serde_json::to_string(&fitness_age).map_err(|e| e.to_string())
     }
 }
 

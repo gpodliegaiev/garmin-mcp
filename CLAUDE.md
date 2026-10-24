@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-`garmin-mcp` is an MCP (Model Context Protocol) server in Rust (edition 2024) that exposes tools for reading Garmin Connect data, so an AI can evaluate the user's training and health. Early stage. Tools: `list_activities`, `get_activity`, `get_sleep`.
+`garmin-mcp` is an MCP (Model Context Protocol) server in Rust (edition 2024) that exposes tools for reading Garmin Connect data, so an AI can evaluate the user's training and health. Early stage. Tools: `list_activities`, `get_activity`, `get_sleep`, `get_fitness_age`.
 
 ## Commands
 
@@ -23,7 +23,7 @@ cargo test <name>           # single test by name substring
 - `src/main.rs` — entry point; loads `Config`, builds `GarminClient`, constructs `GarminServer` and serves it over stdio transport.
 - `src/config.rs` — `Config` from env vars / `.env` (`GARMIN_API_KEY` required, `GARMIN_BASE_URL` optional). Custom `Debug` hides the key.
 - `src/garmin/auth.rs` — `TokenManager`: `POST /personalapitoken-service/personal-api/personal-api-key/token` with `Authorization: ApiKey <key>` returns a bearer JWT as plain text, valid 24h. Cached behind a tokio `Mutex`, refreshed 5 min before expiry. Uses `SystemTime`, not `Instant` (macOS `Instant` pauses during sleep).
-- `src/garmin/client.rs` — `GarminClient`: authenticated GETs with `Authorization: Bearer <token>`; on 401 invalidates the token and retries once. API calls (`list_activities`, `activity_detail`, `daily_sleep`) return typed structs via generic `get_json<T, Q>` (`Q` = any `Serialize` query, e.g. `&[("date", "2026-10-23")]`).
+- `src/garmin/client.rs` — `GarminClient`: authenticated GETs with `Authorization: Bearer <token>`; on 401 invalidates the token and retries once. API calls (`list_activities`, `activity_detail`, `daily_sleep`, `fitness_age`) return typed structs via generic `get_json<T, Q>` (`Q` = any `Serialize` query, e.g. `&[("date", "2026-10-23")]`).
 - Response types all follow one pattern: a raw struct (Deserialize from Garmin camelCase, Garmin units, every field `Option`, unknown Garmin fields ignored) → `into_summary()` → an output struct (Serialize as snake_case, unit in every field name, `None` skipped).
 - `src/garmin/types.rs` — shared pieces: `ActivityTypeFilter`, `SpeedStyle`, and `pub(super)` helpers used by both activity modules: `round`, `format_pace` ("m:ss"), `format_time` ("m:ss" or "h:mm:ss"), `positive` / `rounded` / `count` (0 → `None`), `to_minutes` (s → min, 2 dp), `only_true` (keep a flag only if `true`), `benefit` (strip training-effect message number), `event_type` (drop `uncategorized`).   - Activity conversions: durations → minutes (2 dp); distance → km (3 dp), but meters for swimming; speed → `*_pace_per_km` "m:ss" for run/walk/hike, `*_pace_per_100m` for swim, `*_speed_kmh` otherwise (chosen by `SpeedStyle::for_activity` from the `typeKey`). Zero values (strength, indoor) mean "not tracked" → omitted. Kept even when 0: training effect, `difference_body_battery`; altitude and temperature can be ≤ 0, so they are not filtered.
   - Garmin stores many values as float32, so they arrive with noise (`2.4000000953674316`). Round only to real precision (training effect 1 dp, training load 1 dp, cadence and running dynamics 1 dp) via `round()`. Never round below what matters for health evaluation; leave already-clean fields (HR, power, calories, sleep metrics) unrounded. Sleep durations are converted seconds → minutes (1 dp).
@@ -53,6 +53,13 @@ cargo test <name>           # single test by name substring
   - `sleepScores` factors have `qualifierKey` and `optimalStart`/`optimalEnd` (output as `[low, high]`; `totalDuration` in seconds → minutes); only overall and stage percentages have a `value`.
   - `sleepNeed` / `nextSleepNeed` / `sleepAlignment` times (`recommendedBedtimeStartMins`, `optimalSleepWindowStartMins`, `...MidpointMins`) are minutes after local midnight → "HH:MM" (wrapping for negative values).
   - "Nothing to report" values are dropped: `NOT_AVAILABLE` insight, `NO_CHANGE` adjustments, 0 s durations. SpO2 fields are only sent when SpO2 tracking was on.
+- `src/garmin/fitness_age.rs`: `GET /fitnessage-service/fitnessage/v2/{date}` → `FitnessAge` → `into_summary()` → `FitnessAgeSummary` (ages 1 dp, `components` renamed with units: `vigorous_days_per_week`, `vigorous_minutes_per_week`, `resting_hr_bpm`, `bmi`, `body_fat_percent`). Quirks:
+  - The response is one object, not the array the spec says.
+  - It is the latest Fitness Age on or before the date (a future date returns today's); `lastUpdated` (always midnight) is output as a date.
+  - `bodyFat` replaces `bmi` when there is a smart-scale reading.
+  - A day without Fitness Age still returns 200: only `chronologicalAge` and every component `stale: true` with `staleInputs`.
+  - `achievableFitnessAge` and per-component `targetValue`, `improvementValue`, `potentialAge`, `priority` only appear when Garmin has a suggestion.
+  - `fullHistoryScan` made no difference in probes, so it isn't sent. A malformed date returns 404 `{}`.
 - `src/server.rs` — `GarminServer`, the MCP handler:
   - Tools are async methods in the `#[tool_router] impl GarminServer` block, each annotated `#[tool(description = ...)]`.
   - Tool inputs are structs deriving `Deserialize` + `JsonSchema` (via `rmcp::schemars`), received as `Parameters<T>`. Doc comments on fields become the JSON schema descriptions shown to clients.

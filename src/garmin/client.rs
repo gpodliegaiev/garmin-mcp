@@ -21,6 +21,7 @@ use super::{
     activity::{Activity, ActivitySummary},
     activity_detail::{ActivityDetail, ActivityDetailSummary},
     auth::TokenManager,
+    fitness_age::{FitnessAge, FitnessAgeSummary},
     sleep::{DailySleep, SleepSummary},
     types::ActivityTypeFilter,
 };
@@ -158,6 +159,16 @@ impl GarminClient {
             .get_json(DAILY_SLEEP_PATH, &[("date", date.as_str())])
             .await?;
         // Convert Garmin's nested format into our flat summary (or `None`).
+        Ok(raw.into_summary())
+    }
+
+    /// Gets the latest Fitness Age as of `date` (a later date than the last
+    /// update returns that update's values).
+    pub async fn fitness_age(&self, date: NaiveDate) -> anyhow::Result<FitnessAgeSummary> {
+        // The date is part of the path. `{date}` uses `NaiveDate`'s
+        // `Display` format, `YYYY-MM-DD`.
+        let path = format!("/fitnessage-service/fitnessage/v2/{date}");
+        let raw: FitnessAge = self.get_json(&path, &[] as &[(&str, &str)]).await?;
         Ok(raw.into_summary())
     }
 

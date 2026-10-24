@@ -7,7 +7,7 @@ Full request and response schemas are in `garmin-openapi.json` under `components
 
 ## Endpoints
 
-3 of 26 endpoints are implemented. Status comes from scanning `src/`; refresh it with `python3 docs/update_garmin_spec.py --offline`.
+4 of 26 endpoints are implemented. Status comes from scanning `src/`; refresh it with `python3 docs/update_garmin_spec.py --offline`.
 
 | Endpoint | MCP tool | `GarminClient` method |
 |---|---|---|
@@ -16,7 +16,7 @@ Full request and response schemas are in `garmin-openapi.json` under `components
 | ✅ [`GET /activitylist-service/activities/search/activities`](#get-activitylist-serviceactivitiessearchactivities) | `list_activities` | `list_activities` |
 | [`GET /biometric-service/heartRateZones/v2`](#get-biometric-serviceheartratezonesv2) | not implemented | |
 | [`GET /download-service/files/activity/{activityId}`](#get-download-servicefilesactivityactivityid) | not implemented | |
-| [`GET /fitnessage-service/fitnessage/v2/{calendarDate}`](#get-fitnessage-servicefitnessagev2calendardate) | not implemented | |
+| ✅ [`GET /fitnessage-service/fitnessage/v2/{calendarDate}`](#get-fitnessage-servicefitnessagev2calendardate) | `get_fitness_age` | `fitness_age` |
 | [`GET /goal-service/goal/user/effective/weightgoal/{startDate}/{endDate}`](#get-goal-servicegoalusereffectiveweightgoalstartdateenddate) | not implemented | |
 | [`GET /hrv-service/hrv/{calendarDate}`](#get-hrv-servicehrvcalendardate) | not implemented | |
 | [`GET /hrv-service/hrv/daily/{fromDate}/{toDate}`](#get-hrv-servicehrvdailyfromdatetodate) | not implemented | |
@@ -145,7 +145,7 @@ Download activity file. Download an activity file in its original format.
 
 ## GET /fitnessage-service/fitnessage/v2/{calendarDate}
 
-**Not implemented.**
+**Implemented:** MCP tool `get_fitness_age`, via `GarminClient::fitness_age` (`src/garmin/client.rs`).
 
 Returns the lastest Fitness Age information as of the target calendar date.
 
