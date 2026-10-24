@@ -7,18 +7,28 @@ bundle as `JSON.parse('{"openapi":...}')`. This script downloads that bundle,
 pulls the spec out, and writes:
 
 - docs/garmin-openapi.json  the full spec (open in any OpenAPI viewer)
-- docs/garmin-api.md        a readable index: endpoints, params, responses
+- docs/garmin-api.md        a readable index: endpoints, params, responses,
+                            and which endpoints this server already calls
 
-Usage (standard library only):  python3 docs/update_garmin_spec.py
+Implementation status is found by scanning src/ for the endpoint paths, so it
+never needs editing by hand. For each path it shows the `GarminClient` method
+that calls it and the MCP tool that uses that method.
+
+Usage (standard library only):
+  python3 docs/update_garmin_spec.py            download the spec, write both
+  python3 docs/update_garmin_spec.py --offline  rebuild garmin-api.md from the
+                                                local spec (after adding a tool)
 """
 import json
 import pathlib
 import re
+import sys
 import urllib.request
 
 SITE = "https://developer.garmin.com"
 SWAGGER_PAGE = SITE + "/gc-developer-program/personal/swagger-docs/"
 DOCS = pathlib.Path(__file__).resolve().parent
+SRC = DOCS.parent / "src"
 METHODS = ("get", "post", "put", "patch", "delete")
 
 
@@ -100,8 +110,57 @@ def anchor(method, path):
     return re.sub(r"[^a-z0-9 _-]", "", f"{method} {path}".lower()).replace(" ", "-")
 
 
+def enclosing_fns(text, pattern):
+    """Names of the Rust `fn`s whose body has a match for `pattern`.
+
+    Takes the nearest `fn name` above each match, which is enough for this
+    codebase (no nested functions around API calls).
+    """
+    names = []
+    current = None
+    for line in text.splitlines():
+        found = re.search(r"\bfn (\w+)", line)
+        if found:
+            current = found.group(1)
+        if current and re.search(pattern, line) and current not in names:
+            names.append(current)
+    return names
+
+
+def implemented(spec):
+    """Maps each spec path called by the server to `(client method, tool)`.
+
+    Finds string literals starting with `/` in src/, either a `const` (then the
+    method is the `fn` that uses the constant) or inline in a `fn`. Spec
+    placeholders like `{activityId}` match any `{...}` in the Rust string, so
+    `format!("/activity-service/activity/{activity_id}")` counts.
+    """
+    client = (SRC / "garmin" / "client.rs").read_text(encoding="utf-8")
+    server = (SRC / "server.rs").read_text(encoding="utf-8")
+    calls = {}  # Rust path literal -> client method name
+    for line_text in client.splitlines():
+        for literal in re.findall(r'"(/[^"]*)"', line_text):
+            const = re.match(r"\s*(?:pub\s+)?const (\w+)", line_text)
+            if const:
+                methods = enclosing_fns(client, rf"\b{const.group(1)}\b")
+            else:
+                methods = enclosing_fns(client, re.escape(f'"{literal}"'))
+            if methods:
+                calls[literal] = methods[0]
+
+    status = {}
+    for path in spec["paths"]:
+        pattern = "^" + re.sub(r"\\\{.*?\\\}", r"\{[^}]+\}", re.escape(path)) + "$"
+        for literal, method in calls.items():
+            if re.match(pattern, literal):
+                tools = enclosing_fns(server, rf"\.{method}\(")
+                status[path] = (method, ", ".join(f"`{t}`" for t in tools) or "none")
+    return status
+
+
 def markdown(spec):
     """Renders the endpoint index as markdown."""
+    status = implemented(spec)
     lines = [
         "# Garmin Connect Personal API: endpoint index",
         "",
@@ -114,13 +173,30 @@ def markdown(spec):
         "",
         "## Endpoints",
         "",
+        f"{len(status)} of {len(spec['paths'])} endpoints are implemented. "
+        "Status comes from scanning `src/`; refresh it with "
+        "`python3 docs/update_garmin_spec.py --offline`.",
+        "",
+        "| Endpoint | MCP tool | `GarminClient` method |",
+        "|---|---|---|",
     ]
     for method, path, _ in operations(spec):
-        lines.append(f"- [`{method} {path}`](#{anchor(method, path)})")
+        client_fn, tool = status.get(path, ("", ""))
+        link = f"[`{method} {path}`](#{anchor(method, path)})"
+        if client_fn:
+            lines.append(f"| ✅ {link} | {tool} | `{client_fn}` |")
+        else:
+            lines.append(f"| {link} | not implemented | |")
     lines.append("")
 
     for method, path, op in operations(spec):
         lines += [f"## {method} {path}", ""]
+        if path in status:
+            client_fn, tool = status[path]
+            lines += [f"**Implemented:** MCP tool {tool}, via `GarminClient::{client_fn}` "
+                      "(`src/garmin/client.rs`).", ""]
+        else:
+            lines += ["**Not implemented.**", ""]
         text = ". ".join(t for t in (op.get("summary"), op.get("description")) if t)
         if text:
             lines += [cell(text), ""]
@@ -148,13 +224,16 @@ def markdown(spec):
 
 
 def main():
-    spec = extract_spec(fetch(find_bundle(fetch(SWAGGER_PAGE))))
-    (DOCS / "garmin-openapi.json").write_text(
-        json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
+    spec_file = DOCS / "garmin-openapi.json"
+    if "--offline" in sys.argv[1:]:
+        spec = json.loads(spec_file.read_text(encoding="utf-8"))
+    else:
+        spec = extract_spec(fetch(find_bundle(fetch(SWAGGER_PAGE))))
+        spec_file.write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     (DOCS / "garmin-api.md").write_text(markdown(spec), encoding="utf-8")
     schemas = len(spec.get("components", {}).get("schemas", {}))
-    print(f"wrote {len(spec['paths'])} paths, {schemas} schemas to {DOCS}")
+    done = len(implemented(spec))
+    print(f"wrote {len(spec['paths'])} paths ({done} implemented), {schemas} schemas to {DOCS}")
 
 
 if __name__ == "__main__":

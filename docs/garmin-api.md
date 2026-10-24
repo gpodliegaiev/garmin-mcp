@@ -7,34 +7,40 @@ Full request and response schemas are in `garmin-openapi.json` under `components
 
 ## Endpoints
 
-- [`GET /activity-service/activity/{activityId}`](#get-activity-serviceactivityactivityid)
-- [`GET /activity-service/activity/{activityId}/workouts`](#get-activity-serviceactivityactivityidworkouts)
-- [`GET /activitylist-service/activities/search/activities`](#get-activitylist-serviceactivitiessearchactivities)
-- [`GET /biometric-service/heartRateZones/v2`](#get-biometric-serviceheartratezonesv2)
-- [`GET /download-service/files/activity/{activityId}`](#get-download-servicefilesactivityactivityid)
-- [`GET /fitnessage-service/fitnessage/v2/{calendarDate}`](#get-fitnessage-servicefitnessagev2calendardate)
-- [`GET /goal-service/goal/user/effective/weightgoal/{startDate}/{endDate}`](#get-goal-servicegoalusereffectiveweightgoalstartdateenddate)
-- [`GET /hrv-service/hrv/{calendarDate}`](#get-hrv-servicehrvcalendardate)
-- [`GET /hrv-service/hrv/daily/{fromDate}/{toDate}`](#get-hrv-servicehrvdailyfromdatetodate)
-- [`GET /nutrition-service/food/logs/{date}`](#get-nutrition-servicefoodlogsdate)
-- [`GET /periodichealth-service/menstrualcycle/summary/{calendarDate}`](#get-periodichealth-servicemenstrualcyclesummarycalendardate)
-- [`GET /periodichealth-service/menstrualcycle/dayview/{calendarDate}`](#get-periodichealth-servicemenstrualcycledayviewcalendardate)
-- [`GET /sleep-service/sleep/dailySleep`](#get-sleep-servicesleepdailysleep)
-- [`GET /sleep-service/sleep/dailySleepSummariesByDate`](#get-sleep-servicesleepdailysleepsummariesbydate)
-- [`GET /userprofile-service/userprofile/settings`](#get-userprofile-serviceuserprofilesettings)
-- [`GET /usersummary-service/stats/hydration/daily/{startDate}/{endDate}`](#get-usersummary-servicestatshydrationdailystartdateenddate)
-- [`GET /usersummary-service/stats/steps/daily/{startDate}/{endDate}`](#get-usersummary-servicestatsstepsdailystartdateenddate)
-- [`GET /usersummary-service/stats/stress/daily/{startDate}/{endDate}`](#get-usersummary-servicestatsstressdailystartdateenddate)
-- [`GET /usersummary-service/usersummary/daily`](#get-usersummary-serviceusersummarydaily)
-- [`GET /usersummary-service/v2/dailysummaries`](#get-usersummary-servicev2dailysummaries)
-- [`GET /weight-service/weight/all/{startDate}/{endDate}`](#get-weight-serviceweightallstartdateenddate)
-- [`GET /weight-service/weight/range/{startDate}/{endDate}`](#get-weight-serviceweightrangestartdateenddate)
-- [`GET /wellness-service/wellness/bodyBattery/reports/daily`](#get-wellness-servicewellnessbodybatteryreportsdaily)
-- [`GET /wellness-service/wellness/daily/spo2acclimation/{calendarDate}`](#get-wellness-servicewellnessdailyspo2acclimationcalendardate)
-- [`GET /wellness-service/wellness/dailyHeartRate`](#get-wellness-servicewellnessdailyheartrate)
-- [`GET /wellnessactivity-service/activity/summary/range/{fromDate}/{untilDate}`](#get-wellnessactivity-serviceactivitysummaryrangefromdateuntildate)
+3 of 26 endpoints are implemented. Status comes from scanning `src/`; refresh it with `python3 docs/update_garmin_spec.py --offline`.
+
+| Endpoint | MCP tool | `GarminClient` method |
+|---|---|---|
+| ✅ [`GET /activity-service/activity/{activityId}`](#get-activity-serviceactivityactivityid) | `get_activity` | `activity_detail` |
+| [`GET /activity-service/activity/{activityId}/workouts`](#get-activity-serviceactivityactivityidworkouts) | not implemented | |
+| ✅ [`GET /activitylist-service/activities/search/activities`](#get-activitylist-serviceactivitiessearchactivities) | `list_activities` | `list_activities` |
+| [`GET /biometric-service/heartRateZones/v2`](#get-biometric-serviceheartratezonesv2) | not implemented | |
+| [`GET /download-service/files/activity/{activityId}`](#get-download-servicefilesactivityactivityid) | not implemented | |
+| [`GET /fitnessage-service/fitnessage/v2/{calendarDate}`](#get-fitnessage-servicefitnessagev2calendardate) | not implemented | |
+| [`GET /goal-service/goal/user/effective/weightgoal/{startDate}/{endDate}`](#get-goal-servicegoalusereffectiveweightgoalstartdateenddate) | not implemented | |
+| [`GET /hrv-service/hrv/{calendarDate}`](#get-hrv-servicehrvcalendardate) | not implemented | |
+| [`GET /hrv-service/hrv/daily/{fromDate}/{toDate}`](#get-hrv-servicehrvdailyfromdatetodate) | not implemented | |
+| [`GET /nutrition-service/food/logs/{date}`](#get-nutrition-servicefoodlogsdate) | not implemented | |
+| [`GET /periodichealth-service/menstrualcycle/summary/{calendarDate}`](#get-periodichealth-servicemenstrualcyclesummarycalendardate) | not implemented | |
+| [`GET /periodichealth-service/menstrualcycle/dayview/{calendarDate}`](#get-periodichealth-servicemenstrualcycledayviewcalendardate) | not implemented | |
+| ✅ [`GET /sleep-service/sleep/dailySleep`](#get-sleep-servicesleepdailysleep) | `get_sleep` | `daily_sleep` |
+| [`GET /sleep-service/sleep/dailySleepSummariesByDate`](#get-sleep-servicesleepdailysleepsummariesbydate) | not implemented | |
+| [`GET /userprofile-service/userprofile/settings`](#get-userprofile-serviceuserprofilesettings) | not implemented | |
+| [`GET /usersummary-service/stats/hydration/daily/{startDate}/{endDate}`](#get-usersummary-servicestatshydrationdailystartdateenddate) | not implemented | |
+| [`GET /usersummary-service/stats/steps/daily/{startDate}/{endDate}`](#get-usersummary-servicestatsstepsdailystartdateenddate) | not implemented | |
+| [`GET /usersummary-service/stats/stress/daily/{startDate}/{endDate}`](#get-usersummary-servicestatsstressdailystartdateenddate) | not implemented | |
+| [`GET /usersummary-service/usersummary/daily`](#get-usersummary-serviceusersummarydaily) | not implemented | |
+| [`GET /usersummary-service/v2/dailysummaries`](#get-usersummary-servicev2dailysummaries) | not implemented | |
+| [`GET /weight-service/weight/all/{startDate}/{endDate}`](#get-weight-serviceweightallstartdateenddate) | not implemented | |
+| [`GET /weight-service/weight/range/{startDate}/{endDate}`](#get-weight-serviceweightrangestartdateenddate) | not implemented | |
+| [`GET /wellness-service/wellness/bodyBattery/reports/daily`](#get-wellness-servicewellnessbodybatteryreportsdaily) | not implemented | |
+| [`GET /wellness-service/wellness/daily/spo2acclimation/{calendarDate}`](#get-wellness-servicewellnessdailyspo2acclimationcalendardate) | not implemented | |
+| [`GET /wellness-service/wellness/dailyHeartRate`](#get-wellness-servicewellnessdailyheartrate) | not implemented | |
+| [`GET /wellnessactivity-service/activity/summary/range/{fromDate}/{untilDate}`](#get-wellnessactivity-serviceactivitysummaryrangefromdateuntildate) | not implemented | |
 
 ## GET /activity-service/activity/{activityId}
+
+**Implemented:** MCP tool `get_activity`, via `GarminClient::activity_detail` (`src/garmin/client.rs`).
 
 Retrieves the activity summary, metadata, measurements, and split summary information for the specified activity.
 
@@ -51,6 +57,8 @@ Retrieves the activity summary, metadata, measurements, and split summary inform
 
 ## GET /activity-service/activity/{activityId}/workouts
 
+**Not implemented.**
+
 Retrieves workouts performed during an activity
 
 | Param | In | Type | Default | Description |
@@ -65,6 +73,8 @@ Retrieves workouts performed during an activity
 - **500**: An unexpected server error occurred.
 
 ## GET /activitylist-service/activities/search/activities
+
+**Implemented:** MCP tool `list_activities`, via `GarminClient::list_activities` (`src/garmin/client.rs`).
 
 Searches activities using the supplied filters and returns matching paginated activity summaries.
 
@@ -111,6 +121,8 @@ Searches activities using the supplied filters and returns matching paginated ac
 
 ## GET /biometric-service/heartRateZones/v2
 
+**Not implemented.**
+
 Retrieve the user's heart rate zone configuration.
 
 | Param | In | Type | Default | Description |
@@ -120,6 +132,8 @@ Retrieve the user's heart rate zone configuration.
 - **200** → `HeartRateZonesDTO[]` (application/json): Successfully retrieved the user's heart rate zone configuration.
 
 ## GET /download-service/files/activity/{activityId}
+
+**Not implemented.**
 
 Download activity file. Download an activity file in its original format.
 
@@ -131,6 +145,8 @@ Download activity file. Download an activity file in its original format.
 
 ## GET /fitnessage-service/fitnessage/v2/{calendarDate}
 
+**Not implemented.**
+
 Returns the lastest Fitness Age information as of the target calendar date.
 
 | Param | In | Type | Default | Description |
@@ -141,6 +157,8 @@ Returns the lastest Fitness Age information as of the target calendar date.
 - **200** → `FitnessAgeDTO[]` (application/json): success
 
 ## GET /goal-service/goal/user/effective/weightgoal/{startDate}/{endDate}
+
+**Not implemented.**
 
 Get effective weight goals. Returns the authenticated user's effective weight goals and weight goal ranges for the requested date interval.
 
@@ -157,6 +175,8 @@ Get effective weight goals. Returns the authenticated user's effective weight go
 
 ## GET /hrv-service/hrv/{calendarDate}
 
+**Not implemented.**
+
 Get HRV data for a specific date
 
 | Param | In | Type | Default | Description |
@@ -167,6 +187,8 @@ Get HRV data for a specific date
 - **204**: No data
 
 ## GET /hrv-service/hrv/daily/{fromDate}/{toDate}
+
+**Not implemented.**
 
 Get HRV daily summaries for a date range
 
@@ -179,6 +201,8 @@ Get HRV daily summaries for a date range
 - **204**: no data
 
 ## GET /nutrition-service/food/logs/{date}
+
+**Not implemented.**
 
 Retrieves the user's daily nutrition summary for a specific calendar date. This includes the user's nutrition goals, nutrients consumed, and discrete events for the day. The response can optionally include meal-by-meal breakdowns of calories and other nutrients consumed by the user on the given date.
 
@@ -194,6 +218,8 @@ Retrieves the user's daily nutrition summary for a specific calendar date. This 
 
 ## GET /periodichealth-service/menstrualcycle/summary/{calendarDate}
 
+**Not implemented.**
+
 Get menstrual cycle summary for a date. Returns a summary of the user's menstrual cycle.
 
 | Param | In | Type | Default | Description |
@@ -207,6 +233,8 @@ Get menstrual cycle summary for a date. Returns a summary of the user's menstrua
 - **500**: An unexpected server error occurred while retrieving Menstrual Cycle summary data.
 
 ## GET /periodichealth-service/menstrualcycle/dayview/{calendarDate}
+
+**Not implemented.**
 
 Get detailed menstrual cycle day view. Returns detailed menstrual cycle information for a single calendar day, combining the user's logged daily data (symptoms, flow, mood, etc.), the cycle summary for that day, and (for pregnancy tracking) weekly weight goal ranges.
 
@@ -226,6 +254,8 @@ Get detailed menstrual cycle day view. Returns detailed menstrual cycle informat
 
 ## GET /sleep-service/sleep/dailySleep
 
+**Implemented:** MCP tool `get_sleep`, via `GarminClient::daily_sleep` (`src/garmin/client.rs`).
+
 Retrieves daily sleep data for a calendar date
 
 | Param | In | Type | Default | Description |
@@ -235,6 +265,8 @@ Retrieves daily sleep data for a calendar date
 - **200** → `DailySleepDTO` (application/json): success
 
 ## GET /sleep-service/sleep/dailySleepSummariesByDate
+
+**Not implemented.**
 
 Retrieves daily sleep summaries data for a date range, up to a maximum of 31 days.
 
@@ -247,11 +279,15 @@ Retrieves daily sleep summaries data for a date range, up to a maximum of 31 day
 
 ## GET /userprofile-service/userprofile/settings
 
+**Not implemented.**
+
 Retrieve the user profile settings.
 
 - **200** → `UserSettingsDTO` (application/json): success
 
 ## GET /usersummary-service/stats/hydration/daily/{startDate}/{endDate}
+
+**Not implemented.**
 
 Get daily hydration data for a date range, up to a maximum of 31 days.
 
@@ -264,6 +300,8 @@ Get daily hydration data for a date range, up to a maximum of 31 days.
 
 ## GET /usersummary-service/stats/steps/daily/{startDate}/{endDate}
 
+**Not implemented.**
+
 Get daily steps data for a date range, up to a maximum of 28 days.
 
 | Param | In | Type | Default | Description |
@@ -274,6 +312,8 @@ Get daily steps data for a date range, up to a maximum of 28 days.
 - **200** → `StepsDailyStatDTO[]` (application/json): success
 
 ## GET /usersummary-service/stats/stress/daily/{startDate}/{endDate}
+
+**Not implemented.**
 
 Get daily stress data for a date range, up to a maximum of 28 days.
 
@@ -286,6 +326,8 @@ Get daily stress data for a date range, up to a maximum of 28 days.
 
 ## GET /usersummary-service/usersummary/daily
 
+**Not implemented.**
+
 Get user summary data for a specific date. User summary data includes steps, calories, stress, Body Battery, and other wellness metrics for the given date.
 
 | Param | In | Type | Default | Description |
@@ -295,6 +337,8 @@ Get user summary data for a specific date. User summary data includes steps, cal
 - **200** → `UserDailySummaryDto` (application/json): success
 
 ## GET /usersummary-service/v2/dailysummaries
+
+**Not implemented.**
 
 Get user daily summaries for a date range, up to a maximum of 1 year.
 
@@ -307,6 +351,8 @@ Get user daily summaries for a date range, up to a maximum of 1 year.
 
 ## GET /weight-service/weight/all/{startDate}/{endDate}
 
+**Not implemented.**
+
 Retrieve all weight entries for a specified date range.
 
 | Param | In | Type | Default | Description |
@@ -317,6 +363,8 @@ Retrieve all weight entries for a specified date range.
 - **200** → `DateWeightDTO[]` (application/json): success
 
 ## GET /weight-service/weight/range/{startDate}/{endDate}
+
+**Not implemented.**
 
 Retrieve weight summaries for a date range, including daily latest weights, the range average, and adjacent weights.
 
@@ -329,6 +377,8 @@ Retrieve weight summaries for a date range, including daily latest weights, the 
 - **200** → `WeightRangeDTO` (application/json): success
 
 ## GET /wellness-service/wellness/bodyBattery/reports/daily
+
+**Not implemented.**
 
 Returns daily Body Battery reports for a date range, up to a maximum of 31 days.
 
@@ -346,6 +396,8 @@ Returns daily Body Battery reports for a date range, up to a maximum of 31 days.
 
 ## GET /wellness-service/wellness/daily/spo2acclimation/{calendarDate}
 
+**Not implemented.**
+
 Returns daily SpO2 readings data for a given calendar date.
 
 | Param | In | Type | Default | Description |
@@ -360,6 +412,8 @@ Returns daily SpO2 readings data for a given calendar date.
 
 ## GET /wellness-service/wellness/dailyHeartRate
 
+**Not implemented.**
+
 Returns daily heart rate data for a given date.
 
 | Param | In | Type | Default | Description |
@@ -373,6 +427,8 @@ Returns daily heart rate data for a given date.
 - **500**: An unexpected server error occurred while retrieving Heart rate data.
 
 ## GET /wellnessactivity-service/activity/summary/range/{fromDate}/{untilDate}
+
+**Not implemented.**
 
 Returns a list of wellness activity summaries for the given date range. The fromDate and untilDate are inclusive.
 

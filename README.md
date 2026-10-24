@@ -141,7 +141,7 @@ The code is commented heavily, as a Rust learning resource.
 ### Garmin API docs
 
 `docs/` holds a local copy of Garmin's [swagger docs](https://developer.garmin.com/gc-developer-program/personal/swagger-docs/):
-- `garmin-api.md`: a readable index of every endpoint.
+- `garmin-api.md`: a readable index of every endpoint, marking which ones this server implements and the MCP tool for each.
 - `garmin-openapi.json`: the full OpenAPI spec.
 
-To refresh both, run `python3 docs/update_garmin_spec.py`.
+To refresh both, run `python3 docs/update_garmin_spec.py`. After adding a tool, run it with `--offline` to update only the implementation status from the local spec.
