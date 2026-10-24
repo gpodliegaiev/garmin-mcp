@@ -21,6 +21,7 @@ use super::{
     activity::{Activity, ActivitySummary},
     activity_detail::{ActivityDetail, ActivityDetailSummary},
     auth::TokenManager,
+    daily_summary::{DailySummaries, DaySummary, UserDailySummary},
     fitness_age::{FitnessAge, FitnessAgeSummary},
     hrv::{HrvDay, HrvNight, HrvRange},
     sleep::{DailySleep, SleepSummary},
@@ -199,6 +200,38 @@ impl GarminClient {
         // `and_then` (not `map`) because `into_summary` itself returns an
         // `Option`; this avoids an `Option<Option<_>>`.
         Ok(raw.and_then(HrvNight::into_summary))
+    }
+
+    /// Gets one wellness summary per day from `start` to `end` (inclusive).
+    /// Garmin allows at most 365 days between the dates. Days without data
+    /// are left out, so the list may be empty.
+    pub async fn daily_summaries(
+        &self,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> anyhow::Result<Vec<DaySummary>> {
+        // Two query values of the same type, so a plain slice of pairs works.
+        let (start, end) = (start.to_string(), end.to_string());
+        let raw: DailySummaries = self
+            .get_json(
+                "/usersummary-service/v2/dailysummaries",
+                &[("startDate", start.as_str()), ("endDate", end.as_str())],
+            )
+            .await?;
+        Ok(raw.into_summary())
+    }
+
+    /// Gets one day's wellness summary, with a few fields the range version
+    /// lacks. `Ok(None)` means no data for that day.
+    pub async fn daily_summary(&self, date: NaiveDate) -> anyhow::Result<Option<DaySummary>> {
+        let date = date.to_string();
+        let raw: UserDailySummary = self
+            .get_json(
+                "/usersummary-service/usersummary/daily",
+                &[("calendarDate", date.as_str())],
+            )
+            .await?;
+        Ok(raw.into_summary())
     }
 
     /// Like [`Self::get_optional_json`], for endpoints that always return

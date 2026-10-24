@@ -7,7 +7,7 @@ Full request and response schemas are in `garmin-openapi.json` under `components
 
 ## Endpoints
 
-6 of 26 endpoints are implemented. Status comes from scanning `src/`; refresh it with `python3 docs/update_garmin_spec.py --offline`.
+8 of 26 endpoints are implemented. Status comes from scanning `src/`; refresh it with `python3 docs/update_garmin_spec.py --offline`.
 
 | Endpoint | MCP tool | `GarminClient` method |
 |---|---|---|
@@ -29,8 +29,8 @@ Full request and response schemas are in `garmin-openapi.json` under `components
 | [`GET /usersummary-service/stats/hydration/daily/{startDate}/{endDate}`](#get-usersummary-servicestatshydrationdailystartdateenddate) | not implemented | |
 | [`GET /usersummary-service/stats/steps/daily/{startDate}/{endDate}`](#get-usersummary-servicestatsstepsdailystartdateenddate) | not implemented | |
 | [`GET /usersummary-service/stats/stress/daily/{startDate}/{endDate}`](#get-usersummary-servicestatsstressdailystartdateenddate) | not implemented | |
-| [`GET /usersummary-service/usersummary/daily`](#get-usersummary-serviceusersummarydaily) | not implemented | |
-| [`GET /usersummary-service/v2/dailysummaries`](#get-usersummary-servicev2dailysummaries) | not implemented | |
+| ✅ [`GET /usersummary-service/usersummary/daily`](#get-usersummary-serviceusersummarydaily) | `get_daily_summary` | `daily_summary` |
+| ✅ [`GET /usersummary-service/v2/dailysummaries`](#get-usersummary-servicev2dailysummaries) | `get_daily_summary` | `daily_summaries` |
 | [`GET /weight-service/weight/all/{startDate}/{endDate}`](#get-weight-serviceweightallstartdateenddate) | not implemented | |
 | [`GET /weight-service/weight/range/{startDate}/{endDate}`](#get-weight-serviceweightrangestartdateenddate) | not implemented | |
 | [`GET /wellness-service/wellness/bodyBattery/reports/daily`](#get-wellness-servicewellnessbodybatteryreportsdaily) | not implemented | |
@@ -326,7 +326,7 @@ Get daily stress data for a date range, up to a maximum of 28 days.
 
 ## GET /usersummary-service/usersummary/daily
 
-**Not implemented.**
+**Implemented:** MCP tool `get_daily_summary`, via `GarminClient::daily_summary` (`src/garmin/client.rs`).
 
 Get user summary data for a specific date. User summary data includes steps, calories, stress, Body Battery, and other wellness metrics for the given date.
 
@@ -338,7 +338,7 @@ Get user summary data for a specific date. User summary data includes steps, cal
 
 ## GET /usersummary-service/v2/dailysummaries
 
-**Not implemented.**
+**Implemented:** MCP tool `get_daily_summary`, via `GarminClient::daily_summaries` (`src/garmin/client.rs`).
 
 Get user daily summaries for a date range, up to a maximum of 1 year.
 

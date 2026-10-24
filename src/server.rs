@@ -285,6 +285,21 @@ pub struct GetHrvRequest {
     pub end_date: Option<String>,
 }
 
+/// Input arguments for the `get_daily_summary` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetDailySummaryRequest {
+    /// First day, YYYY-MM-DD. Defaults to 6 days before end_date (a week).
+    #[serde(default)]
+    pub start_date: Option<String>,
+    /// Last day, YYYY-MM-DD, inclusive. Defaults to today. At most 31 days
+    /// after start_date. When start_date equals end_date, a few extra fields
+    /// are included (Body Battery at wake and during sleep, 7-day resting HR,
+    /// absolute min/max HR, time per activity level, total distance, the
+    /// activity behind each Body Battery event).
+    #[serde(default)]
+    pub end_date: Option<String>,
+}
+
 /// Our MCP server. Holds everything it needs to answer requests.
 ///
 /// - `Clone` lets the value be duplicated; `rmcp` needs this because it may
@@ -437,6 +452,38 @@ impl GarminServer {
             .await
             .map_err(|e| format!("{e:#}"))?;
         serde_json::to_string(&fitness_age).map_err(|e| e.to_string())
+    }
+
+    /// Returns daily wellness summaries for a date range as compact JSON, or
+    /// a short message if no day in the range has data.
+    #[tool(
+        description = "Get the user's daily wellness summaries from Garmin Connect, one entry per day: steps (and goal, distance), floors, calories (total, active, resting, consumed), resting heart rate and min/max 2-minute average HR, abnormal HR alerts, moderate/vigorous intensity minutes and weekly goal, stress (average, max, qualifier, minutes at rest/low/medium/high/activity), Body Battery (highest, lowest, charged, drained, latest, Garmin's feedback) with every event that charged or drained it (sleep, activity, recovery, stress, nap: local start, minutes, impact, feedback), waking respiration, SpO2 when tracked, average altitude, hydration when logged. A partial day (e.g. today) has tracked_hours and tracked_until_local. For a single day (start_date = end_date) it also has Body Battery at wake and charged during sleep, 7-day average resting HR, absolute min/max HR, minutes highly active/active/sedentary/sleeping, total distance incl. activities, and the activity behind each Body Battery event. Defaults to the last 7 days; start_date and end_date can be at most 31 days apart (each day is about 1.4 KB), so request longer periods in several calls. Days without data are omitted."
+    )]
+    async fn get_daily_summary(
+        &self,
+        Parameters(req): Parameters<GetDailySummaryRequest>,
+    ) -> Result<String, String> {
+        // Garmin allows 365 days apart, but a year of output is about
+        // 500 KB, too much for an AI's context; 31 days is about 45 KB.
+        let (start, end) = date_range(req.start_date.as_deref(), req.end_date.as_deref(), 7, 31)?;
+
+        // One day: the single-day endpoint has more fields. Wrap its result
+        // in a list so both cases have the same shape (`Option::into_iter`
+        // gives zero or one item, `collect` makes a `Vec` of it).
+        let days = if start == end {
+            self.garmin
+                .daily_summary(start)
+                .await
+                .map(|day| day.into_iter().collect::<Vec<_>>())
+        } else {
+            self.garmin.daily_summaries(start, end).await
+        }
+        .map_err(|e| format!("{e:#}"))?;
+
+        if days.is_empty() {
+            return Ok(format!("No daily summary recorded from {start} to {end}."));
+        }
+        serde_json::to_string(&days).map_err(|e| e.to_string())
     }
 
     /// Returns HRV per night for a date range as compact JSON, or a short

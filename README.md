@@ -9,6 +9,7 @@ An [MCP](https://modelcontextprotocol.io) server, written in Rust, that gives AI
 | `list_activities` | Your most recent activities, newest first, with every metric Garmin recorded: time, distance, pace, elevation, heart rate and time in each HR zone, power (zones, power curve, normalized power, FTP, TSS), cadence, running dynamics, fastest splits, training effect and load, VO2 max, body battery, respiration, stress, calories, sweat loss, swim/paddle/dive/MTB metrics, strength exercises (sets, reps, weight, volume per exercise), and split totals. | `start` (default 0), `limit` (default 5, max 100), and optional filters: `activity_type` (see below), `start_date` / `end_date` (`YYYY-MM-DD`), `min_distance_km` / `max_distance_km`, `min_duration_min` / `max_duration_min`, `min_elevation_gain_m` / `max_elevation_gain_m` |
 | `get_activity` | One activity by id. Most metrics are already in `list_activities`; this adds the time zone, min and recovery heart rate, average moving pace, stamina, and heart rate per split type. | `activity_id` (from `list_activities`) |
 | `get_fitness_age` | Garmin Fitness Age as of a date: chronological, current, previous and achievable fitness age, and each input (vigorous days and minutes per week, resting heart rate, BMI or body fat) with Garmin's target, the fitness age reachable by hitting it, and its priority. Inputs without recent data are marked stale. | `date` as `YYYY-MM-DD` (default today); returns the latest values on or before it |
+| `get_daily_summary` | All-day wellness per day: steps, floors, calories, resting and min/max heart rate, intensity minutes, stress (level and minutes per category), Body Battery with every event that charged or drained it, respiration, SpO2, hydration. For a single day, also Body Battery at wake and during sleep, 7-day resting HR, time per activity level, and the activity behind each Body Battery event. | `start_date` / `end_date` as `YYYY-MM-DD` (default the last 7 days, up to 31 days apart) |
 | `get_hrv` | Overnight heart rate variability per night: last night's average and 5-minute high, 7-day average, personal baseline (balanced range, low limit), HRV status and feedback code, in ms. For a single day, also the measured window and every 5-minute reading. | `start_date` / `end_date` as `YYYY-MM-DD` (default the last 7 nights, up to 366 days apart) |
 | `get_sleep` | One night's sleep with every metric Garmin recorded: bed and wake times, deep/light/REM/awake durations and naps, sleep score with each factor's rating and optimal range, heart rate, respiration, SpO2 and breathing disruption (when tracked), stress, sleep need with its adjustments, recommended bedtime for this and the next night, and sleep-timing alignment. | `date` as `YYYY-MM-DD` (default today) |
 
@@ -123,12 +124,13 @@ cargo fmt                   # format
 src/
 ├── main.rs           entry point: loads config, starts the server on stdio
 ├── config.rs         reads GARMIN_API_KEY / GARMIN_BASE_URL
-├── server.rs         MCP tools (list_activities, get_activity, get_sleep, get_fitness_age, get_hrv)
+├── server.rs         MCP tools, one #[tool] method each (see the table above)
 └── garmin/
     ├── activity.rs         activity list entries (Activity)
     ├── activity_detail.rs  one activity's full details (ActivityDetail)
     ├── auth.rs             bearer token fetch and cache
     ├── client.rs           authenticated HTTP requests and API calls
+    ├── daily_summary.rs    daily wellness summaries (DailySummaries, UserDailySummary)
     ├── fitness_age.rs      Fitness Age and its inputs (FitnessAge)
     ├── hrv.rs              heart rate variability per night (HrvRange, HrvNight)
     ├── sleep.rs            one night's sleep (DailySleep)

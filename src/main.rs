@@ -6,6 +6,12 @@
 //! from its stdout. This file only wires things up; the actual tools live in
 //! `server.rs`.
 
+// `#![...]` (with `!`) is an attribute for the whole crate. Tests build
+// large expected JSON values with `serde_json::json!`, a macro that calls
+// itself once per value and needs a higher limit than the default 128.
+// `cfg_attr(test, ...)` applies it only to test builds.
+#![cfg_attr(test, recursion_limit = "256")]
+
 // `mod server;` tells the compiler that a module named `server` exists and
 // that its code is in `src/server.rs`. Without this line that file would be
 // ignored entirely.
