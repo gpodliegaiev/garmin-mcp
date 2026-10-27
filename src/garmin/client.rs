@@ -21,6 +21,7 @@ use super::{
     activity::{Activity, ActivitySummary},
     activity_detail::{ActivityDetail, ActivityDetailSummary},
     auth::TokenManager,
+    body_battery::{BodyBatteryDay, BodyBatteryReport},
     daily_summary::{DailySummaries, DaySummary, UserDailySummary},
     fitness_age::{FitnessAge, FitnessAgeSummary},
     heart_rate_zones::{HeartRateZones, ZoneSet},
@@ -212,6 +213,36 @@ impl GarminClient {
             )
             .await?;
         Ok(raw.into_iter().map(HeartRateZones::into_summary).collect())
+    }
+
+    /// Gets the Body Battery report per day from `start` to `end`
+    /// (inclusive, at most 31 days). `chunks` splits each day into that many
+    /// intervals, each giving its lowest and highest level. Days without data
+    /// are dropped.
+    pub async fn body_battery(
+        &self,
+        start: NaiveDate,
+        end: NaiveDate,
+        chunks: u32,
+    ) -> anyhow::Result<Vec<BodyBatteryDay>> {
+        // Query values of different types (dates and a number) can't share
+        // one array type, so they are all turned into `String`s first.
+        let query = [
+            ("startDate", start.to_string()),
+            ("endDate", end.to_string()),
+            ("chunks", chunks.to_string()),
+        ];
+        let raw: Vec<BodyBatteryReport> = self
+            .get_json(
+                "/wellness-service/wellness/bodyBattery/reports/daily",
+                &query,
+            )
+            .await?;
+        // `filter_map` converts each day and drops the `None`s (no data).
+        Ok(raw
+            .into_iter()
+            .filter_map(BodyBatteryReport::into_summary)
+            .collect())
     }
 
     /// Gets weigh-ins and body composition from `start` to `end`

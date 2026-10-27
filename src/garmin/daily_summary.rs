@@ -165,7 +165,7 @@ struct RawBodyBattery {
 /// `SLEEP_PREPARATION_BALANCED_AND_EXERCISE`. Same shape in both responses.
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-struct RawFeedback {
+pub(super) struct RawFeedback {
     body_battery_level: Option<String>,
     feedback_long_type: Option<String>,
 }
@@ -304,10 +304,12 @@ pub struct UserDailySummary {
 }
 
 /// A Body Battery event in the single-day response: GMT start plus the
-/// time-zone offset in ms, and the activity behind it.
+/// time-zone offset in ms, and the activity behind it. Also used by
+/// `body_battery.rs`, whose events have the same shape (without the
+/// activity fields).
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-struct RawEventV1 {
+pub(super) struct RawEventV1 {
     event_type: Option<String>,
     event_start_time_gmt: Option<String>,
     timezone_offset: Option<i64>,
@@ -716,7 +718,7 @@ impl UserDailySummary {
 }
 
 impl RawEventV1 {
-    fn into_event(self) -> BodyBatteryEvent {
+    pub(super) fn into_event(self) -> BodyBatteryEvent {
         // GMT start + offset (ms) = local start. `TimeDelta` is a length of
         // time that can be added to a date-time.
         let start_local = self.event_start_time_gmt.as_deref().and_then(|text| {
@@ -741,7 +743,7 @@ impl RawEventV1 {
 impl RawFeedback {
     /// Joins level and comment: `"HIGH: SLEEP_PREPARATION_..."`. `None` if
     /// both are missing.
-    fn text(self) -> Option<String> {
+    pub(super) fn text(self) -> Option<String> {
         match (self.body_battery_level, self.feedback_long_type) {
             (Some(level), Some(feedback)) => Some(format!("{level}: {feedback}")),
             // `or` picks whichever one is present.

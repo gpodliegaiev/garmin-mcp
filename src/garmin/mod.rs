@@ -9,6 +9,7 @@
 //! - `types`: shared types and unit helpers.
 //! - `activity`: structs for the activity list.
 //! - `activity_detail`: structs for one activity's full details.
+//! - `body_battery`: structs for the daily Body Battery report.
 //! - `daily_summary`: structs for daily wellness summaries.
 //! - `fitness_age`: structs for Fitness Age.
 //! - `heart_rate_zones`: structs for the user's heart rate zones.
@@ -19,6 +20,7 @@
 pub mod activity;
 pub mod activity_detail;
 pub mod auth;
+pub mod body_battery;
 pub mod client;
 pub mod daily_summary;
 pub mod fitness_age;

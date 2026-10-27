@@ -7,7 +7,7 @@ Full request and response schemas are in `garmin-openapi.json` under `components
 
 ## Endpoints
 
-12 of 26 endpoints are implemented. Status comes from scanning `src/`; refresh it with `python3 docs/update_garmin_spec.py --offline`.
+13 of 26 endpoints are implemented. Status comes from scanning `src/`; refresh it with `python3 docs/update_garmin_spec.py --offline`.
 
 | Endpoint | MCP tool | `GarminClient` method |
 |---|---|---|
@@ -33,7 +33,7 @@ Full request and response schemas are in `garmin-openapi.json` under `components
 | ✅ [`GET /usersummary-service/v2/dailysummaries`](#get-usersummary-servicev2dailysummaries) | `get_daily_summary` | `daily_summaries` |
 | [`GET /weight-service/weight/all/{startDate}/{endDate}`](#get-weight-serviceweightallstartdateenddate) | not implemented | |
 | ✅ [`GET /weight-service/weight/range/{startDate}/{endDate}`](#get-weight-serviceweightrangestartdateenddate) | `get_weight` | `weight` |
-| [`GET /wellness-service/wellness/bodyBattery/reports/daily`](#get-wellness-servicewellnessbodybatteryreportsdaily) | not implemented | |
+| ✅ [`GET /wellness-service/wellness/bodyBattery/reports/daily`](#get-wellness-servicewellnessbodybatteryreportsdaily) | `get_body_battery` | `body_battery` |
 | [`GET /wellness-service/wellness/daily/spo2acclimation/{calendarDate}`](#get-wellness-servicewellnessdailyspo2acclimationcalendardate) | not implemented | |
 | [`GET /wellness-service/wellness/dailyHeartRate`](#get-wellness-servicewellnessdailyheartrate) | not implemented | |
 | [`GET /wellnessactivity-service/activity/summary/range/{fromDate}/{untilDate}`](#get-wellnessactivity-serviceactivitysummaryrangefromdateuntildate) | not implemented | |
@@ -378,7 +378,7 @@ Retrieve weight summaries for a date range, including daily latest weights, the 
 
 ## GET /wellness-service/wellness/bodyBattery/reports/daily
 
-**Not implemented.**
+**Implemented:** MCP tool `get_body_battery`, via `GarminClient::body_battery` (`src/garmin/client.rs`).
 
 Returns daily Body Battery reports for a date range, up to a maximum of 31 days.
 
