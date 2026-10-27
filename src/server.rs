@@ -310,6 +310,19 @@ pub struct GetBodyBatteryRequest {
     pub intervals_per_day: Option<u32>,
 }
 
+/// Input arguments for the `get_heart_rate_day` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetHeartRateDayRequest {
+    /// Day, YYYY-MM-DD. Defaults to today.
+    #[serde(default)]
+    pub date: Option<String>,
+    /// Minutes per interval, 2 to 60. Defaults to 15. 2 returns every
+    /// reading as it is (the watch records one every 2 minutes); larger
+    /// values give each interval's average, lowest and highest.
+    #[serde(default)]
+    pub interval_min: Option<u32>,
+}
+
 /// Input arguments for the `get_weight` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetWeightRequest {
@@ -638,6 +651,34 @@ impl GarminServer {
             return Ok(format!("No Body Battery recorded from {start} to {end}."));
         }
         serde_json::to_string(&days).map_err(|e| e.to_string())
+    }
+
+    /// Returns one day's heart rate through the day as compact JSON, or a
+    /// short message if the day has no data.
+    #[tool(
+        description = "Get the user's heart rate through one day from Garmin Connect (all-day wrist readings, one every 2 minutes, including sleep and workouts): resting HR, 7-day average resting HR, min and max HR, and the readings grouped into intervals as [local HH:MM start, average, lowest, highest] bpm (default 15 minutes, about 1.7 KB per day). interval_min 2 returns every reading as [local HH:MM, bpm] (about 10 KB). Intervals without readings (watch off) are missing. A day still in progress has tracked_until_local. Abnormal-HR thresholds and flagged readings are included when Garmin sends them. One day per call; for daily resting HR over many days use get_daily_summary."
+    )]
+    async fn get_heart_rate_day(
+        &self,
+        Parameters(req): Parameters<GetHeartRateDayRequest>,
+    ) -> Result<String, String> {
+        let date = match req.date {
+            Some(text) => parse_date(&text)?,
+            None => Local::now().date_naive(),
+        };
+        let interval = req.interval_min.unwrap_or(15);
+        if !(2..=60).contains(&interval) {
+            return Err(format!("interval_min must be 2 to 60, got {interval}"));
+        }
+        let day = self
+            .garmin
+            .heart_rate_day(date, interval)
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+        match day {
+            Some(day) => serde_json::to_string(&day).map_err(|e| e.to_string()),
+            None => Ok(format!("No heart rate recorded on {date}.")),
+        }
     }
 }
 

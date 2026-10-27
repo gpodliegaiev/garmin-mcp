@@ -24,6 +24,7 @@ use super::{
     body_battery::{BodyBatteryDay, BodyBatteryReport},
     daily_summary::{DailySummaries, DaySummary, UserDailySummary},
     fitness_age::{FitnessAge, FitnessAgeSummary},
+    heart_rate_day::{DailyHeartRate, HeartRateDay},
     heart_rate_zones::{HeartRateZones, ZoneSet},
     hrv::{HrvDay, HrvNight, HrvRange},
     sleep::{DailySleep, SleepSummary},
@@ -202,6 +203,23 @@ impl GarminClient {
         let path = format!("/fitnessage-service/fitnessage/v2/{date}");
         let raw: FitnessAge = self.get_json(&path, &[] as &[(&str, &str)]).await?;
         Ok(raw.into_summary())
+    }
+
+    /// Gets one day's heart rate readings, grouped into intervals of
+    /// `interval_min` minutes (2 keeps every reading). `Ok(None)` means no
+    /// data for that day.
+    pub async fn heart_rate_day(
+        &self,
+        date: NaiveDate,
+        interval_min: u32,
+    ) -> anyhow::Result<Option<HeartRateDay>> {
+        let raw: DailyHeartRate = self
+            .get_json(
+                "/wellness-service/wellness/dailyHeartRate",
+                &[("date", date.to_string())],
+            )
+            .await?;
+        Ok(raw.into_summary(interval_min))
     }
 
     /// Gets the user's heart rate zones, one set per configured sport.
