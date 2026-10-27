@@ -12,6 +12,7 @@
 //! - `body_battery`: structs for the daily Body Battery report.
 //! - `daily_summary`: structs for daily wellness summaries.
 //! - `fitness_age`: structs for Fitness Age.
+//! - `heart_rate_day`: structs for one day's heart rate readings.
 //! - `heart_rate_zones`: structs for the user's heart rate zones.
 //! - `hrv`: structs for heart rate variability.
 //! - `sleep`: structs for one night's sleep.
@@ -24,6 +25,7 @@ pub mod body_battery;
 pub mod client;
 pub mod daily_summary;
 pub mod fitness_age;
+pub mod heart_rate_day;
 pub mod heart_rate_zones;
 pub mod hrv;
 pub mod sleep;

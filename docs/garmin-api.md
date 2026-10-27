@@ -7,7 +7,7 @@ Full request and response schemas are in `garmin-openapi.json` under `components
 
 ## Endpoints
 
-13 of 26 endpoints are implemented. Status comes from scanning `src/`; refresh it with `python3 docs/update_garmin_spec.py --offline`.
+14 of 26 endpoints are implemented. Status comes from scanning `src/`; refresh it with `python3 docs/update_garmin_spec.py --offline`.
 
 | Endpoint | MCP tool | `GarminClient` method |
 |---|---|---|
@@ -35,7 +35,7 @@ Full request and response schemas are in `garmin-openapi.json` under `components
 | ✅ [`GET /weight-service/weight/range/{startDate}/{endDate}`](#get-weight-serviceweightrangestartdateenddate) | `get_weight` | `weight` |
 | ✅ [`GET /wellness-service/wellness/bodyBattery/reports/daily`](#get-wellness-servicewellnessbodybatteryreportsdaily) | `get_body_battery` | `body_battery` |
 | [`GET /wellness-service/wellness/daily/spo2acclimation/{calendarDate}`](#get-wellness-servicewellnessdailyspo2acclimationcalendardate) | not implemented | |
-| [`GET /wellness-service/wellness/dailyHeartRate`](#get-wellness-servicewellnessdailyheartrate) | not implemented | |
+| ✅ [`GET /wellness-service/wellness/dailyHeartRate`](#get-wellness-servicewellnessdailyheartrate) | `get_heart_rate_day` | `heart_rate_day` |
 | [`GET /wellnessactivity-service/activity/summary/range/{fromDate}/{untilDate}`](#get-wellnessactivity-serviceactivitysummaryrangefromdateuntildate) | not implemented | |
 
 ## GET /activity-service/activity/{activityId}
@@ -412,7 +412,7 @@ Returns daily SpO2 readings data for a given calendar date.
 
 ## GET /wellness-service/wellness/dailyHeartRate
 
-**Not implemented.**
+**Implemented:** MCP tool `get_heart_rate_day`, via `GarminClient::heart_rate_day` (`src/garmin/client.rs`).
 
 Returns daily heart rate data for a given date.
 
