@@ -293,6 +293,18 @@ pub struct GetHrvRequest {
     pub end_date: Option<String>,
 }
 
+/// Input arguments for the `get_weight` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetWeightRequest {
+    /// First day, YYYY-MM-DD. Defaults to 29 days before end_date (30 days).
+    #[serde(default)]
+    pub start_date: Option<String>,
+    /// Last day, YYYY-MM-DD, inclusive. Defaults to today. At most 366 days
+    /// after start_date.
+    #[serde(default)]
+    pub end_date: Option<String>,
+}
+
 /// Input arguments for the `get_daily_summary` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetDailySummaryRequest {
@@ -558,6 +570,29 @@ impl GarminServer {
             // `_` matches everything else: `None` or an empty list.
             _ => Ok(format!("No HRV data recorded from {start} to {end}.")),
         }
+    }
+
+    /// Returns weigh-ins, body composition and the weight goal for a date
+    /// range as compact JSON, or a short message if there is nothing.
+    #[tool(
+        description = "Get the user's weight and body composition from Garmin Connect for a date range: one entry per day with a weigh-in (newest first) with local time, weight, change from the previous weigh-in, BMI, body fat and body water percent, muscle and bone mass, and visceral fat, physique rating and metabolic age when the scale reports them, plus the source (e.g. INDEX_SCALE, MANUAL); days with several weigh-ins also list each one. Also the averages over the range, the closest weigh-in before and after the range (for the trend), and the user's weight goal (target, start date, who set it). Masses in kg. Defaults to the last 30 days; start_date and end_date can be at most 366 days apart."
+    )]
+    async fn get_weight(
+        &self,
+        Parameters(req): Parameters<GetWeightRequest>,
+    ) -> Result<String, String> {
+        // Garmin accepts 10 years and more, but people who weigh daily get
+        // about 300 bytes per day; a year is about 110 KB at most.
+        let (start, end) = date_range(req.start_date.as_deref(), req.end_date.as_deref(), 30, 366)?;
+        let report = self
+            .garmin
+            .weight(start, end)
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+        if report.is_empty() {
+            return Ok(format!("No weight recorded around {start} to {end}."));
+        }
+        serde_json::to_string(&report).map_err(|e| e.to_string())
     }
 }
 

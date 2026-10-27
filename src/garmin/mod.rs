@@ -14,6 +14,7 @@
 //! - `heart_rate_zones`: structs for the user's heart rate zones.
 //! - `hrv`: structs for heart rate variability.
 //! - `sleep`: structs for one night's sleep.
+//! - `weight`: structs for weight, body composition and the weight goal.
 
 pub mod activity;
 pub mod activity_detail;
@@ -25,6 +26,7 @@ pub mod heart_rate_zones;
 pub mod hrv;
 pub mod sleep;
 pub mod types;
+pub mod weight;
 
 // Re-export so other code can write `garmin::GarminClient` instead of
 // `garmin::client::GarminClient`.
