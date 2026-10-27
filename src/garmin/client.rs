@@ -27,6 +27,7 @@ use super::{
     hrv::{HrvDay, HrvNight, HrvRange},
     sleep::{DailySleep, SleepSummary},
     types::ActivityTypeFilter,
+    weight::{WeightGoals, WeightRange, WeightReport},
 };
 use crate::config::Config;
 
@@ -211,6 +212,23 @@ impl GarminClient {
             )
             .await?;
         Ok(raw.into_iter().map(HeartRateZones::into_summary).collect())
+    }
+
+    /// Gets weigh-ins and body composition from `start` to `end`
+    /// (inclusive), with the range average, the closest weigh-ins outside
+    /// the range, and the user's weight goal.
+    pub async fn weight(&self, start: NaiveDate, end: NaiveDate) -> anyhow::Result<WeightReport> {
+        let range_path = format!("/weight-service/weight/range/{start}/{end}");
+        let goal_path = format!("/goal-service/goal/user/effective/weightgoal/{start}/{end}");
+        // `tokio::try_join!` runs both requests at the same time and waits
+        // for both. If either fails, it returns that error (and `?` passes
+        // it on); otherwise it gives a tuple with both results.
+        // `includeAll=true` adds every weigh-in of a day, not only the last.
+        let (range, goals): (WeightRange, WeightGoals) = tokio::try_join!(
+            self.get_json(&range_path, &[("includeAll", "true")]),
+            self.get_json(&goal_path, &[] as &[(&str, &str)]),
+        )?;
+        Ok(range.into_summary(goals))
     }
 
     /// Gets one HRV summary per night from `start` to `end` (inclusive).
