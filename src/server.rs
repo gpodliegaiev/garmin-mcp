@@ -293,6 +293,23 @@ pub struct GetHrvRequest {
     pub end_date: Option<String>,
 }
 
+/// Input arguments for the `get_body_battery` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetBodyBatteryRequest {
+    /// First day, YYYY-MM-DD. Defaults to 6 days before end_date (a week).
+    #[serde(default)]
+    pub start_date: Option<String>,
+    /// Last day, YYYY-MM-DD, inclusive. Defaults to today. At most 30 days
+    /// after start_date (31 days in all).
+    #[serde(default)]
+    pub end_date: Option<String>,
+    /// Number of equal intervals per day, 1 to 96; each gives its lowest
+    /// and highest level with the time. Defaults to 12 (2-hour intervals);
+    /// 96 gives 15-minute detail, 1 only the day's low and high.
+    #[serde(default)]
+    pub intervals_per_day: Option<u32>,
+}
+
 /// Input arguments for the `get_weight` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetWeightRequest {
@@ -593,6 +610,34 @@ impl GarminServer {
             return Ok(format!("No weight recorded around {start} to {end}."));
         }
         serde_json::to_string(&report).map_err(|e| e.to_string())
+    }
+
+    /// Returns the Body Battery report per day as compact JSON, or a short
+    /// message if no day in the range has data.
+    #[tool(
+        description = "Get the user's Body Battery (Garmin's 5-100 energy level) through the day from Garmin Connect, one entry per day: charged and drained totals, the day's lowest and highest level, the level curve as [local HH:MM, level] pairs (the low and the high of each interval), Garmin's feedback (latest and end-of-sleep comment with level), and every event that charged or drained it (sleep, activity, recovery, stress, nap: local start, minutes, impact, Garmin's feedback codes). A day still in progress has tracked_until_local. Defaults to the last 7 days with 12 intervals per day (2 hours); start_date and end_date can be at most 30 days apart. Use intervals_per_day 96 for 15-minute detail on a single day. Days without data are omitted."
+    )]
+    async fn get_body_battery(
+        &self,
+        Parameters(req): Parameters<GetBodyBatteryRequest>,
+    ) -> Result<String, String> {
+        // Garmin's limit is 31 days in all, i.e. 30 days apart.
+        let (start, end) = date_range(req.start_date.as_deref(), req.end_date.as_deref(), 7, 30)?;
+        // Garmin accepts any number, but 96 (15 minutes) is already finer
+        // than its readings are useful for, and 2 points per interval adds up.
+        let chunks = req.intervals_per_day.unwrap_or(12);
+        if !(1..=96).contains(&chunks) {
+            return Err(format!("intervals_per_day must be 1 to 96, got {chunks}"));
+        }
+        let days = self
+            .garmin
+            .body_battery(start, end, chunks)
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+        if days.is_empty() {
+            return Ok(format!("No Body Battery recorded from {start} to {end}."));
+        }
+        serde_json::to_string(&days).map_err(|e| e.to_string())
     }
 }
 
